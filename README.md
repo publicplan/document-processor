@@ -38,6 +38,75 @@ $hasChanges = $result->hasUnacceptedChanges;
 $messages = $result->getAllMessages();
 ```
 
+## Framework Integration
+
+### Symfony
+
+Register services in `config/services.yaml`:
+
+```yaml
+Publicplan\DocumentProcessor\:
+  resource: '../vendor/publicplan/document-processor/src/'
+  autowire: true
+  autoconfigure: true
+  exclude:
+    - '../vendor/publicplan/document-processor/src/Service/Converter/'
+```
+
+Then inject in your controller:
+
+```php
+use Publicplan\DocumentProcessor\Service\DocumentProcessor;
+
+class MyController extends AbstractController
+{
+    public function upload(
+        Request $request,
+        DocumentProcessor $processor
+    ): Response {
+        $result = $processor->process('/path/to/file.docx', 'doc.docx');
+        return $this->render('result.html.twig', ['html' => $result->html]);
+    }
+}
+```
+
+### Laravel
+
+Register in `config/app.php`:
+
+```php
+'providers' => [
+    // ...
+    App\Providers\DocumentProcessorServiceProvider::class,
+],
+```
+
+Or use directly:
+
+```php
+use Publicplan\DocumentProcessor\Service\DocumentProcessor;
+use Publicplan\DocumentProcessor\Service\DocumentLoader;
+
+Route::post('/upload', function (Request $request) {
+    $processor = new DocumentProcessor(new DocumentLoader());
+    $result = $processor->process($request->file('docx')->path(), 'upload.docx');
+    return view('result', ['html' => $result->html]);
+});
+```
+
+### Plain PHP
+
+```php
+require 'vendor/autoload.php';
+
+use Publicplan\DocumentProcessor\Service\DocumentProcessor;
+use Publicplan\DocumentProcessor\Service\DocumentLoader;
+
+$processor = new DocumentProcessor(new DocumentLoader());
+$result = $processor->process('document.docx', 'document.docx');
+echo $result->html;
+```
+
 ## Architecture
 
 ```
