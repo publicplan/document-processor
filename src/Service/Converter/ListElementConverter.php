@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
-use Publicplan\DocumentProcessor\Model\ConversionContext;
-use Publicplan\DocumentProcessor\Model\ListConfig;
-use Publicplan\DocumentProcessor\Enum\ListConfigType;
-use Publicplan\DocumentProcessor\Model\ParserError;
-use PhpOffice\PhpWord\Element\ListItemRun as DocList;
-use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
-use PhpOffice\PhpWord\Element\Text as DocText;
 use PhpOffice\PhpWord\Element\Link as DocLink;
+use PhpOffice\PhpWord\Element\ListItemRun as DocList;
+use PhpOffice\PhpWord\Element\Text as DocText;
+use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
+use PhpOffice\PhpWord\SimpleType\Jc;
 use PhpOffice\PhpWord\Style;
 use PhpOffice\PhpWord\Style\Numbering;
-use PhpOffice\PhpWord\SimpleType\Jc;
+use Publicplan\DocumentProcessor\Enum\ListConfigType;
+use Publicplan\DocumentProcessor\Model\ConversionContext;
+use Publicplan\DocumentProcessor\Model\ListConfig;
+use Publicplan\DocumentProcessor\Model\ParserError;
 
 /**
  * Konvertiert Listen-Elemente in HTML.
@@ -32,7 +32,7 @@ class ListElementConverter implements ElementConverterInterface
         $text = '';
 
         foreach ($element->getElements() as $textElement) {
-            $elementText = $this->convertSubElement($textElement, $context);
+            $elementText = $this->convertSubElement($textElement);
 
             if ($elementText !== null) {
                 $text .= $elementText;
@@ -68,7 +68,7 @@ class ListElementConverter implements ElementConverterInterface
         $text = '';
 
         foreach ($element->getElements() as $textElement) {
-            $elementText = $this->convertSubElement($textElement, $context);
+            $elementText = $this->convertSubElement($textElement);
 
             if ($elementText !== null) {
                 $text .= $elementText;
@@ -104,7 +104,7 @@ class ListElementConverter implements ElementConverterInterface
     /**
      * Konvertiert ein Unter-Element der Liste.
      */
-    private function convertSubElement(object $textElement, ConversionContext $context): ?string
+    private function convertSubElement(object $textElement): ?string
     {
         if ($textElement instanceof DocBreak) {
             return $this->convertBreakElement($textElement);
@@ -144,8 +144,7 @@ class ListElementConverter implements ElementConverterInterface
             return '##deleted##';
         }
 
-        $converter = new TextElementConverter();
-        return $converter->convert($element, new ConversionContext());
+        return new TextElementConverter()->convert($element, new ConversionContext());
     }
 
     /**
@@ -157,6 +156,7 @@ class ListElementConverter implements ElementConverterInterface
             return '##deleted##';
         }
 
+        /** @noinspection HtmlUnknownTarget */
         return sprintf(
             '<a href="%s">%s</a>',
             htmlspecialchars($element->getSource(), ENT_QUOTES, 'UTF-8'),
@@ -170,7 +170,7 @@ class ListElementConverter implements ElementConverterInterface
     private function applyListStyles(DocList $element, string $text): string
     {
         $blockStyles = [];
-        $pStyle = $element->getParagraphStyle();
+        $pStyle      = $element->getParagraphStyle();
 
         if ($pStyle->getAlignment() === Jc::CENTER) {
             $blockStyles[] = 'text-align: center;';
@@ -195,10 +195,11 @@ class ListElementConverter implements ElementConverterInterface
      * Fügt eine Fehlermeldung für nicht unterstützte Elemente hinzu.
      */
     private function addUnhandledElementMessage(
-        object $textElement,
-        DocList $parentElement,
+        object            $textElement,
+        DocList           $parentElement,
         ConversionContext $context
-    ): void {
+    ): void
+    {
         $context->addMessage(
             ParserError::create(
                 ParserError::CONTAINS_UNHANDLED_ELEMENTS,
@@ -221,8 +222,8 @@ class ListElementConverter implements ElementConverterInterface
         $styleName = $element->getStyle()?->getNumStyle();
         /** @var Numbering|null $numStyleObject */
         $numStyleObject = Style::getStyle($styleName);
-        $numLevels = $numStyleObject?->getLevels();
-        $firstItem = $numLevels ? reset($numLevels) : null;
+        $numLevels      = $numStyleObject?->getLevels();
+        $firstItem      = $numLevels ? reset($numLevels) : null;
 
         $listFormat = $firstItem?->getFormat();
 

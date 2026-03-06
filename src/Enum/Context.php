@@ -6,7 +6,7 @@ namespace Publicplan\DocumentProcessor\Enum;
 
 /**
  * Enum für Parser-Kontexte.
- * 
+ *
  * Definiert die verschiedenen Kontexte, in denen Parser-Fehler auftreten können.
  */
 enum Context: string

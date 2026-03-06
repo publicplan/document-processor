@@ -6,16 +6,17 @@ namespace Publicplan\DocumentProcessor\Model;
 
 /**
  * DTO für Listen-Konfiguration.
- * 
+ *
  * Enthält die Konfiguration für Listen-Rendering (Tag-Typ, Nummerierung, Spacing).
  */
 readonly class ListConfig
 {
     public function __construct(
-        public string $tag, 
-        public ?string $type, 
-        public float $bottomSpacingCm = 0.0
-    ) {
+        public string  $tag,
+        public ?string $type,
+        public float   $bottomSpacingCm = 0.0
+    )
+    {
     }
 
     public function renderStartTag(): string
@@ -40,6 +41,6 @@ readonly class ListConfig
 
     public function renderEndTag(): string
     {
-        return "</{$this->tag}>";
+        return "</" . $this->tag . ">";
     }
 }

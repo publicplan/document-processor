@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
-use Publicplan\DocumentProcessor\Model\ConversionContext;
-use Publicplan\DocumentProcessor\Model\ParserError;
 use PhpOffice\PhpWord\Element\Table as DocTable;
 use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
 use PhpOffice\PhpWord\Element\TextRun as DocTextRun;
+use Publicplan\DocumentProcessor\Model\ConversionContext;
+use Publicplan\DocumentProcessor\Model\ParserError;
 
 /**
  * Konvertiert Tabellen-Elemente in HTML.

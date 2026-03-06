@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
+use PhpOffice\PhpWord\Element\FormField;
+use PhpOffice\PhpWord\Element\TextRun as DocTextRun;
+use PhpOffice\PhpWord\SimpleType\Jc;
 use Publicplan\DocumentProcessor\Model\ConversionContext;
 use Publicplan\DocumentProcessor\Model\ParserError;
-use PhpOffice\PhpWord\Element\TextRun as DocTextRun;
-use PhpOffice\PhpWord\Element\FormField;
-use PhpOffice\PhpWord\SimpleType\Jc;
 
 /**
  * Konvertiert TextRun-Elemente (Absätze mit Formatierung) in HTML.
@@ -37,7 +37,7 @@ class TextRunElementConverter implements ElementConverterInterface
      */
     private function convertSubElements(DocTextRun $element, ConversionContext $context): string
     {
-        $text = '';
+        $text             = '';
         $elementConverter = new ElementConverterRegistry();
         $elementConverter->registerDefaultConverters();
 
@@ -58,10 +58,11 @@ class TextRunElementConverter implements ElementConverterInterface
      * Behandelt ungültige/unbekannte Elemente.
      */
     private function handleInvalidElement(
-        object $textElement,
-        DocTextRun $parentElement,
+        object            $textElement,
+        DocTextRun        $parentElement,
         ConversionContext $context
-    ): void {
+    ): void
+    {
         if ($textElement instanceof FormField) {
             $context->addMessage(
                 ParserError::create(
@@ -93,8 +94,8 @@ class TextRunElementConverter implements ElementConverterInterface
     private function wrapWithParagraphStyles(DocTextRun $element, string $text): string
     {
         $blockClasses = [];
-        $blockStyles = [];
-        $pStyle = $element->getParagraphStyle();
+        $blockStyles  = [];
+        $pStyle       = $element->getParagraphStyle();
 
         // Ausrichtung
         if ($pStyle->getAlignment() === Jc::CENTER) {
@@ -106,11 +107,11 @@ class TextRunElementConverter implements ElementConverterInterface
         }
 
         // Paragraph-Abstand
-        $spaceAfter = $pStyle->getSpaceAfter();
+        $spaceAfter    = $pStyle->getSpaceAfter();
         $blockStyles[] = sprintf('margin-bottom: %scm;', $this->twipsToCm($spaceAfter));
 
         $indentLeft = $pStyle->getIndentLeft();
-        $hanging = $pStyle->getHanging();
+        $hanging    = $pStyle->getHanging();
 
         // Spezialfall: Hanging Indent mit Tab
         if ($indentLeft && $hanging && $indentLeft === $hanging && str_contains($text, "\t")) {
@@ -145,6 +146,7 @@ class TextRunElementConverter implements ElementConverterInterface
     {
         [$title, $items] = explode("\t", $text, 2);
 
+        /** @noinspection HtmlUnknownAttribute */
         return sprintf(
             '<div class="hangingIndent%s"%s><table style="border-collapse: collapse; border-width: 0;"><tr><td style="vertical-align: top; padding-right: 1ex;">%s</td><td style="vertical-align: top;">%s</td></tr></table></div>%s',
             !empty($blockClasses) ? sprintf(' %s', implode(' ', $blockClasses)) : '',
@@ -171,7 +173,7 @@ class TextRunElementConverter implements ElementConverterInterface
 
     /**
      * Konvertiert Twips in Zentimeter.
-     * 
+     *
      * @param float|string|null $twips Twips-Wert (kann auch String oder null sein)
      */
     private function twipsToCm(float|string|null $twips): float
@@ -179,9 +181,9 @@ class TextRunElementConverter implements ElementConverterInterface
         if ($twips === null || $twips === '') {
             return 0.0;
         }
-        
-        $twips = (float) $twips;
-        
+
+        $twips = (float)$twips;
+
         return round($twips / 1440 * 2.54, 2);
     }
 

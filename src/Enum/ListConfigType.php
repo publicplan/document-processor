@@ -8,7 +8,7 @@ use PhpOffice\PhpWord\SimpleType\NumberFormat;
 
 /**
  * Enum für Listen-Format-Typen.
- * 
+ *
  * Mappt PhpOffice NumberFormat auf interne Konstanten.
  */
 enum ListConfigType: string

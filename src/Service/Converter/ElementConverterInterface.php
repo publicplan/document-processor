@@ -22,8 +22,9 @@ interface ElementConverterInterface
     /**
      * Konvertiert das Word-Element in HTML.
      *
-     * @param object $element Das zu konvertierende Word-Element
+     * @param object            $element Das zu konvertierende Word-Element
      * @param ConversionContext $context Kontext mit Einstellungen und Parser-Messages
+     *
      * @return string Das generierte HTML
      */
     public function convert(object $element, ConversionContext $context): string;

@@ -47,13 +47,8 @@ class ElementConverterRegistry
      */
     public function findConverter(object $element): ?ElementConverterInterface
     {
-        foreach ($this->converters as $converter) {
-            if ($converter->supports($element)) {
-                return $converter;
-            }
-        }
+        return array_find($this->converters, static fn($converter) => $converter->supports($element));
 
-        return null;
     }
 
     /**
@@ -61,13 +56,8 @@ class ElementConverterRegistry
      */
     public function convert(object $element, ConversionContext $context): ?string
     {
-        $converter = $this->findConverter($element);
+        return $this->findConverter($element)?->convert($element, $context);
 
-        if ($converter === null) {
-            return null;
-        }
-
-        return $converter->convert($element, $context);
     }
 
     /**

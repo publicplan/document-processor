@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Model;
 
-use Publicplan\DocumentProcessor\Model\ParserError;
 use DateTimeInterface;
 
 /**
@@ -14,19 +13,20 @@ use DateTimeInterface;
 readonly class ProcessedDocument
 {
     /**
-     * @param string $html Das generierte HTML
-     * @param DateTimeInterface $lastModified Zeitpunkt der letzten Änderung
-     * @param bool $hasUnacceptedChanges Ob Track-Changes vorhanden sind
-     * @param array<string, ParserError[]> $messages Nach Typ gruppierte Parser-Messages
-     * @param string $sourceFilename Ursprünglicher Dateiname
+     * @param string                       $html                 Das generierte HTML
+     * @param DateTimeInterface            $lastModified         Zeitpunkt der letzten Änderung
+     * @param bool                         $hasUnacceptedChanges Ob Track-Changes vorhanden sind
+     * @param array<string, ParserError[]> $messages             Nach Typ gruppierte Parser-Messages
+     * @param string                       $sourceFilename       Ursprünglicher Dateiname
      */
     public function __construct(
-        public string $html,
+        public string            $html,
         public DateTimeInterface $lastModified,
-        public bool $hasUnacceptedChanges,
-        public array $messages,
-        public string $sourceFilename
-    ) {
+        public bool              $hasUnacceptedChanges,
+        public array             $messages,
+        public string            $sourceFilename
+    )
+    {
     }
 
     /**
@@ -66,11 +66,7 @@ readonly class ProcessedDocument
      */
     public function getAllMessages(): array
     {
-        $all = [];
-        foreach ($this->messages as $severity => $messages) {
-            $all = array_merge($all, $messages);
-        }
-        return $all;
+        return array_merge(...array_values($this->messages));
     }
 
     /**
@@ -80,17 +76,14 @@ readonly class ProcessedDocument
      */
     public function toLegacyFormat(): array
     {
-        $legacyMessages = [];
-        foreach ($this->messages as $type => $errors) {
-            $legacyMessages = array_merge($legacyMessages, $errors);
-        }
+        $legacyMessages = array_merge(...array_values($this->messages));
 
         return [
-            'html' => $this->html,
-            'lastModified' => $this->lastModified,
+            'html'                 => $this->html,
+            'lastModified'         => $this->lastModified,
             'hasUnacceptedChanges' => $this->hasUnacceptedChanges,
-            'messages' => $legacyMessages,
-            'sourceFilename' => $this->sourceFilename,
+            'messages'             => $legacyMessages,
+            'sourceFilename'       => $this->sourceFilename,
         ];
     }
 

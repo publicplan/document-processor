@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service;
 
-use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
-use Publicplan\DocumentProcessor\Model\ParserError;
 use Exception;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
+use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
 use ZipArchive;
 
 /**
@@ -24,6 +23,7 @@ class DocumentLoader
      * Lädt ein Word-Dokument und validiert es.
      *
      * @param string $filePath Absoluter Pfad zur .docx Datei
+     *
      * @return PhpWord Das geladene Dokument
      * @throws DocumentLoadException Wenn das Dokument nicht geladen werden kann
      */
@@ -71,6 +71,7 @@ class DocumentLoader
      * Prüft, ob das Dokument nicht übernommene Änderungen (Track Changes) enthält.
      *
      * @param string $filePath Absoluter Pfad zur .docx Datei
+     *
      * @return bool True, wenn offene Änderungen gefunden wurden
      * @throws DocumentLoadException Wenn die Datei nicht geöffnet werden kann
      */
@@ -88,8 +89,7 @@ class DocumentLoader
 
         $hasChanges = false;
 
-        // Wir suchen explizit nach den öffnenden Tags der Revisionen
-        // Das Leerzeichen oder die schließende Klammer verhindert RSID-Fehler
+        // Wir suchen explizit nach den öffnenden Tags der Revisionen.
         $patterns = [
             '/<w:ins\s/',
             '/<w:del\s/',
@@ -118,16 +118,17 @@ class DocumentLoader
     }
 
     /**
-     * Lädt das Dokument und prüft gleichzeitig auf unübernommene Änderungen.
+     * Lädt das Dokument und prüft gleichzeitig auf nicht übernommene Änderungen.
      *
-     * @param string $filePath Absoluter Pfad zur .docx Datei
+     * @param string    $filePath   Absoluter Pfad zur .docx Datei
      * @param bool|null $hasChanges Output-Parameter: True wenn Track-Changes vorhanden
+     *
      * @return PhpWord Das geladene Dokument
      * @throws DocumentLoadException Wenn das Dokument nicht geladen werden kann
      */
     public function loadWithChangeCheck(string $filePath, ?bool &$hasChanges = null): PhpWord
     {
-        $doc = $this->load($filePath);
+        $doc        = $this->load($filePath);
         $hasChanges = $this->hasUnacceptedChanges($filePath);
 
         return $doc;

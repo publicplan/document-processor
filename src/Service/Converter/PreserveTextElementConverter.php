@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
-use Publicplan\DocumentProcessor\Model\ConversionContext;
-use Publicplan\DocumentProcessor\Model\ParserError;
 use PhpOffice\PhpWord\Element\PreserveText;
+use Publicplan\DocumentProcessor\Model\ConversionContext;
 
 /**
- * Konvertiert PreserveText-Elemente (z.B. Felder) in HTML.
+ * Konvertiert PreserveText-Elemente (z. B. Felder) in HTML.
  */
 class PreserveTextElementConverter implements ElementConverterInterface
 {
@@ -23,9 +22,7 @@ class PreserveTextElementConverter implements ElementConverterInterface
         /** @var PreserveText $element */
 
         // PreserveText enthält oft Feldinhalte wie Seitenzahlen
-        $text = implode(' ', $element->getText());
-
-        return $text;
+        return implode(' ', $element->getText());
     }
 
     public function getPriority(): int

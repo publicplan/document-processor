@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
-use Publicplan\DocumentProcessor\Model\ConversionContext;
 use PhpOffice\PhpWord\Element\PageBreak;
+use Publicplan\DocumentProcessor\Model\ConversionContext;
 
 /**
  * Konvertiert Seitenumbruch-Elemente in HTML.

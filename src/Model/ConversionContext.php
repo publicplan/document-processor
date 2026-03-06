@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Model;
 
-use Publicplan\DocumentProcessor\Model\ParserError;
-use Publicplan\DocumentProcessor\Enum\Context;
-
 /**
  * Kontext für die Konvertierung.
  * Enthält Einstellungen und sammelt Parser-Messages.
@@ -14,27 +11,28 @@ use Publicplan\DocumentProcessor\Enum\Context;
 class ConversionContext
 {
     /** @var array<string, ParserError[]> */
-    private array $messages = [];
+    private array $messages;
 
     /** @var array<string, bool> */
     private array $distinctMessageHashes = [];
 
     public function __construct(
         private readonly bool $trackDistinctMessages = true
-    ) {
+    )
+    {
         $this->messages = [
-            'errors' => [],
+            'errors'   => [],
             'warnings' => [],
-            'notices' => [],
-            'infos' => [],
+            'notices'  => [],
+            'infos'    => [],
         ];
     }
 
     /**
      * Fügt eine Parser-Message hinzu.
      *
-     * @param ParserError $error Die hinzuzufügende Message
-     * @param bool $distinct Ob Duplikate verhindert werden sollen
+     * @param ParserError $error    Die hinzuzufügende Message
+     * @param bool        $distinct Ob Duplikate verhindert werden sollen
      */
     public function addMessage(ParserError $error, bool $distinct = false): void
     {
@@ -84,11 +82,7 @@ class ConversionContext
      */
     public function getAllMessages(): array
     {
-        $all = [];
-        foreach ($this->messages as $severity => $messages) {
-            $all = array_merge($all, $messages);
-        }
-        return $all;
+        return array_merge(...array_values($this->messages));
     }
 
     /**

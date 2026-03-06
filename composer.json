@@ -12,7 +12,8 @@
     ],
     "require": {
         "php": ">=8.4",
-        "phpoffice/phpword": "^1.0"
+        "phpoffice/phpword": "^1.0",
+      "ext-zip": "*"
     },
     "require-dev": {
         "phpunit/phpunit": "^9.0|^10.0"

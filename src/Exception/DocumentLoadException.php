@@ -4,18 +4,21 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Exception;
 
+use Exception;
+
 /**
  * Exception für Fehler beim Laden eines Dokuments.
  */
 class DocumentLoadException extends DocumentProcessorException
 {
     public function __construct(
-        string $message,
-        string $documentPath,
+        string                   $message,
+        string                   $documentPath,
         private readonly ?string $reason = null,
-        int $code = 0,
-        ?\Exception $previous = null
-    ) {
+        int                      $code = 0,
+        ?Exception               $previous = null
+    )
+    {
         $fullMessage = $reason
             ? sprintf('%s: %s', $message, $reason)
             : $message;

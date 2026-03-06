@@ -6,9 +6,6 @@ namespace Publicplan\DocumentProcessor\Model;
 
 /**
  * DTO für Parser-Fehlermeldungen.
- * 
- * Diese Klasse wurde aus dem TemplateParser übernommen und ist nun
- * Teil des DocumentProcessor-Bundles für Standalone-Nutzung.
  */
 class ParserError
 {

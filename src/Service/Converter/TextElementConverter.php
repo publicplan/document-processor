@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
-use Publicplan\DocumentProcessor\Model\ConversionContext;
-use Publicplan\DocumentProcessor\Model\ParserError;
 use PhpOffice\PhpWord\Element\Text as DocText;
 use PhpOffice\PhpWord\Style\Font;
+use Publicplan\DocumentProcessor\Model\ConversionContext;
 
 /**
  * Konvertiert Text-Elemente in HTML.
@@ -15,8 +14,8 @@ use PhpOffice\PhpWord\Style\Font;
 class TextElementConverter implements ElementConverterInterface
 {
     public const string DEFAULT_TAG_UNDERLINE = 'u';
-    public const string DEFAULT_TAG_ITALIC = 'em';
-    public const string DEFAULT_TAG_BOLD = 'strong';
+    public const string DEFAULT_TAG_ITALIC    = 'em';
+    public const string DEFAULT_TAG_BOLD      = 'strong';
 
     public function supports(object $element): bool
     {
@@ -46,11 +45,12 @@ class TextElementConverter implements ElementConverterInterface
      * Extrahiert HTML-Tags basierend auf der Formatierung.
      *
      * @param DocText $element
+     *
      * @return string[]
      */
     private function extractFormatTags(DocText $element): array
     {
-        $tags = [];
+        $tags      = [];
         $fontStyle = $element->getFontStyle();
 
         if (!$fontStyle) {
@@ -75,7 +75,7 @@ class TextElementConverter implements ElementConverterInterface
     /**
      * Wrappt Text mit HTML-Tags.
      *
-     * @param string $text Der zu wrappende Text
+     * @param string   $text Der zu wrappende Text
      * @param string[] $tags Die HTML-Tags
      */
     private function wrapWithTags(string $text, array $tags): string

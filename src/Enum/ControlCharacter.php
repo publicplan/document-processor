@@ -6,7 +6,7 @@ namespace Publicplan\DocumentProcessor\Enum;
 
 /**
  * Enum für visuelle Steuerzeichen im HTML-Output.
- * 
+ *
  * Diese Zeichen werden im Frontend als visuelle Hilfe angezeigt.
  */
 enum ControlCharacter: string
