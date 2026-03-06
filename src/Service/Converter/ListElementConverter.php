@@ -26,8 +26,12 @@ class ListElementConverter implements ElementConverterInterface
         return $element instanceof DocList;
     }
 
+    /**
+     * Konvertiert ein Listen-Element in HTML.
+     */
     public function convert(object $element, ConversionContext $context): string
     {
+        assert($element instanceof DocList, 'Expected DocList instance, got ' . get_class($element));
         return $this->doConvert($element, $context, 0.0);
     }
 
