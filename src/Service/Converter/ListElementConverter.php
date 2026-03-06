@@ -28,42 +28,21 @@ class ListElementConverter implements ElementConverterInterface
 
     public function convert(object $element, ConversionContext $context): string
     {
-        /** @var DocList $element */
-        $text = '';
-
-        foreach ($element->getElements() as $textElement) {
-            $elementText = $this->convertSubElement($textElement);
-
-            if ($elementText !== null) {
-                $text .= $elementText;
-            } else {
-                $this->addUnhandledElementMessage($textElement, $element, $context);
-            }
-        }
-
-        if ($text === '') {
-            return '';
-        }
-
-        // Warnung über Listen-Parsing-Probleme (nur einmal)
-        $context->addMessage(
-            ParserError::create(
-                ParserError::LIST_INFO,
-                ParserError::SEVERITY_INFO,
-                'Das Dokument enthält Listen, welche in der aktuellen Version des Parsers nicht in jedem Fall korrekt interpretiert werden können. Die hier dargestellte Abfolge, Nummerierung oder Hierarchie von Listen kann von der Vorlage abweichen und ist mit dieser abzugleichen. Dies gilt insbesondere bei der Benutzung der Exportfunktionen.'
-            ),
-            true
-        );
-
-        $text = $this->applyListStyles($element, $text);
-
-        return sprintf("    <li>%s</li>%s", $text, PHP_EOL);
+        return $this->doConvert($element, $context, 0.0);
     }
 
     /**
      * Konvertiert ein Listen-Element mit explizitem bottom spacing.
      */
     public function convertWithSpacing(DocList $element, ConversionContext $context, float $bottomSpacingCm): string
+    {
+        return $this->doConvert($element, $context, $bottomSpacingCm);
+    }
+
+    /**
+     * Interne Konvertierungslogik für Listen-Elemente.
+     */
+    private function doConvert(DocList $element, ConversionContext $context, float $bottomSpacingCm): string
     {
         $text = '';
 
