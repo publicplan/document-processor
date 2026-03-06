@@ -9,26 +9,12 @@ namespace Publicplan\DocumentProcessor\Model;
  */
 class ParserError
 {
-    public const
-        DOCUMENT_NOT_LOADED = 'document not loaded',
-        DOCUMENT_HAS_CHANGES = 'document contains changes',
-        LIST_INFO = 'parsing of list not reliable',
-        CONTAINS_FORM_FIELDS = 'contains form fields',
-        CONTAINS_UNHANDLED_ELEMENTS = 'contains unhandled elements',
-        FUNCTION_INVALID = 'invalid function',
-        PLACEHOLDER_NAME_MISSING = 'placeholder name is missing',
-        PLACEHOLDER_FORMAT_INVALID = 'placeholder format is invalid',
-        PLACEHOLDER_MAPPING_UNCERTAIN = 'uncertain placeholder mapping',
-        PLACEHOLDER_MAPPING_MISSING = 'missing placeholder mapping',
-        CONDITION_NOT_OPENED = 'missing opening condition',
-        CONDITION_NOT_CLOSED = 'condition not properly closed',
-        CONDITION_INVALID = 'condition not valid';
+    public const string LIST_INFO                     = 'parsing of list not reliable';
+    public const string CONTAINS_FORM_FIELDS          = 'contains form fields';
+    public const string CONTAINS_UNHANDLED_ELEMENTS   = 'contains unhandled elements';
 
-    public const
-        SEVERITY_ERROR = 'error',
-        SEVERITY_WARNING = 'warning',
-        SEVERITY_NOTICE = 'notice',
-        SEVERITY_INFO = 'info';
+    public const string SEVERITY_ERROR   = 'error';
+    public const string SEVERITY_INFO    = 'info';
 
     protected string  $hash;
     protected string  $type;
