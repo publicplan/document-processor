@@ -10,6 +10,8 @@ use DateTimeZone;
 use Exception;
 use PhpOffice\PhpWord\Element\AbstractElement;
 use PhpOffice\PhpWord\Element\ListItemRun as DocList;
+use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
+use PhpOffice\PhpWord\Element\TextRun as DocTextRun;
 use PhpOffice\PhpWord\PhpWord;
 use Publicplan\DocumentProcessor\Enum\ControlCharacter;
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
@@ -82,13 +84,77 @@ class DocumentProcessor
      */
     private function convertToHtml(PhpWord $doc, ConversionContext $context): string
     {
-        $text           = '';
-        $openListConfig = null; // Trackt die aktuell geöffnete Liste
+        $text                = '';
+        $openListConfig      = null;   // Trackt die aktuell geöffnete Liste
+        $openBorderSignature = null;   // Trackt die aktuelle Border-Gruppe
+        $openBorderStyle     = '';     // CSS-Styles für die aktuelle Border-Gruppe
+        $lastTextRun         = null;   // Merkt sich den letzten TextRun für aufeinanderfolgende TextBreaks
 
         foreach ($doc->getSections() as $section) {
-            foreach ($section->getElements() as $element) {
+            $elements = $section->getElements();
+
+            foreach ($elements as $i => $iValue) {
+                $element = $iValue;
+
+                // Spezialbehandlung für TextBreak (könnte leerer Absatz sein)
+                if ($element instanceof DocBreak) {
+                    // Am Anfang des Dokuments -> <br>
+                    if ($lastTextRun === null) {
+                        $text .= '<br>' . PHP_EOL;
+                        continue;
+                    }
+
+                    // Margin-bottom vom letzten TextRun holen
+                    $marginStyle = $this->getMarginBottomFromElement($lastTextRun);
+                    $styleAttr   = $marginStyle ? sprintf(' style="%s"', $marginStyle) : '';
+
+                    // Border-Gruppen-Handling
+                    $nextElement = $elements[$i + 1] ?? null;
+                    if ($openBorderSignature !== null) {
+                        // Bereits in Gruppe -> prüfe ob fortgesetzt werden soll
+                        $lastBorders = $this->getBorderSignature($lastTextRun);
+
+                        if (!$nextElement instanceof DocTextRun || $lastBorders === null || $lastBorders !== $this->getBorderSignature($nextElement)) {
+                            // Nächstes Element hat keine/andere Borders -> Gruppe schließen
+                            $text                .= '</div>' . PHP_EOL;
+                            $openBorderSignature = null;
+                        }
+                    } else {
+                        // Außerhalb -> prüfe ob Gruppe geöffnet werden muss
+                        $prevBorders = $this->getBorderSignature($lastTextRun);
+
+                        if ($nextElement instanceof DocTextRun
+                            && $prevBorders !== null
+                            && $prevBorders === $this->getBorderSignature($nextElement)) {
+                            // Gruppe öffnen
+                            $openBorderStyle     = $this->buildBorderStyle($lastTextRun);
+                            $text                .= sprintf('<div style="%s">', $openBorderStyle) . PHP_EOL;
+                            $openBorderSignature = $prevBorders;
+                        }
+
+                        // <p> ausgeben
+                    }
+                    $text .= sprintf('<p%s>&#32;</p>', $styleAttr) . PHP_EOL;
+                    continue;
+                }
+
+                // Wenn es ein TextRun ist, merken wir es uns für mögliche folgende TextBreaks
+                // Bei anderen Elementen (außer DocBreak) wird es zurückgesetzt
+                if ($element instanceof DocTextRun) {
+                    $lastTextRun = $element;
+                } elseif (!$element instanceof DocBreak) {
+                    $lastTextRun = null;
+                }
+
                 // Listen-Handling
                 if ($element instanceof DocList) {
+                    // Border-Gruppe schließen wenn nötig
+                    if ($openBorderSignature !== null) {
+                        $text                .= '</div>' . PHP_EOL;
+                        $openBorderSignature = null;
+                        $openBorderStyle     = '';
+                    }
+
                     $html           = $this->handleListElement($element, $context, $openListConfig, $text);
                     $openListConfig = $html['listConfig'];
                     $text           .= $html['content'];
@@ -99,23 +165,217 @@ class DocumentProcessor
                         $openListConfig = null;
                     }
 
-                    // Element konvertieren
-                    $elementHtml = $this->converterRegistry->convert($element, $context);
-                    if ($elementHtml !== null) {
-                        $text .= $elementHtml;
+                    // Border-Gruppen-Handling für TextRun-Elemente
+                    if ($element instanceof DocTextRun) {
+                        $borderSignature = $this->getBorderSignature($element);
+
+                        if ($borderSignature !== null) {
+                            // Element hat Borders
+                            if ($openBorderSignature === null) {
+                                // Neue Border-Gruppe öffnen
+                                $openBorderStyle     = $this->buildBorderStyle($element);
+                                $text                .= sprintf('<div style="%s">', $openBorderStyle) . PHP_EOL;
+                                $openBorderSignature = $borderSignature;
+                            } elseif ($openBorderSignature !== $borderSignature) {
+                                // Verschiedene Borders: Alte Gruppe schließen, neue öffnen
+                                $text                .= '</div>' . PHP_EOL;
+                                $openBorderStyle     = $this->buildBorderStyle($element);
+                                $text                .= sprintf('<div style="%s">', $openBorderStyle) . PHP_EOL;
+                                $openBorderSignature = $borderSignature;
+                            }
+                            // Sonst: Selbe Border-Gruppe, nichts zu tun
+
+                            // Element OHNE Border-Styles konvertieren (da vom Container)
+                            $elementHtml = $this->converterRegistry->convert($element, $context);
+                            if ($elementHtml !== null) {
+                                // Entferne Border-Styles aus dem HTML (wir haben sie im Container)
+                                $elementHtml = $this->removeBorderStyles($elementHtml);
+                                $text        .= $elementHtml;
+                            }
+                        } else {
+                            // Keine Borders: Ggf. Border-Gruppe schließen
+                            if ($openBorderSignature !== null) {
+                                $text                .= '</div>' . PHP_EOL;
+                                $openBorderSignature = null;
+                                $openBorderStyle     = '';
+                            }
+
+                            // Normal konvertieren
+                            $elementHtml = $this->converterRegistry->convert($element, $context);
+                            if ($elementHtml !== null) {
+                                $text .= $elementHtml;
+                            } else {
+                                $this->handleUnknownElement($element, $context);
+                            }
+                        }
                     } else {
-                        $this->handleUnknownElement($element, $context);
+                        // Andere Elemente: Border-Gruppe schließen wenn nötig
+                        if ($openBorderSignature !== null) {
+                            $text                .= '</div>' . PHP_EOL;
+                            $openBorderSignature = null;
+                            $openBorderStyle     = '';
+                        }
+
+                        // Element konvertieren
+                        $elementHtml = $this->converterRegistry->convert($element, $context);
+                        if ($elementHtml !== null) {
+                            $text .= $elementHtml;
+                        } else {
+                            $this->handleUnknownElement($element, $context);
+                        }
                     }
                 }
             }
         }
 
-        // Am Ende: Schließe noch offene Listen
+        // Am Ende: Schließe noch offene Listen und Border-Gruppen
         if ($openListConfig !== null) {
             $text .= $openListConfig->renderEndTag() . PHP_EOL;
         }
+        if ($openBorderSignature !== null) {
+            $text .= '</div>' . PHP_EOL;
+        }
 
         return $text;
+    }
+
+    /**
+     * Erstellt eine eindeutige Signatur für die Border-Styles eines TextRun-Elements.
+     * Gibt null zurück wenn keine Borders gesetzt sind.
+     */
+    private function getBorderSignature(DocTextRun $element): ?string
+    {
+        $pStyle = $element->getParagraphStyle();
+
+        $borders = [
+            'top'    => [
+                'size'  => $pStyle->getBorderTopSize(),
+                'color' => $pStyle->getBorderTopColor(),
+                'style' => $pStyle->getBorderTopStyle(),
+            ],
+            'left'   => [
+                'size'  => $pStyle->getBorderLeftSize(),
+                'color' => $pStyle->getBorderLeftColor(),
+                'style' => $pStyle->getBorderLeftStyle(),
+            ],
+            'right'  => [
+                'size'  => $pStyle->getBorderRightSize(),
+                'color' => $pStyle->getBorderRightColor(),
+                'style' => $pStyle->getBorderRightStyle(),
+            ],
+            'bottom' => [
+                'size'  => $pStyle->getBorderBottomSize(),
+                'color' => $pStyle->getBorderBottomColor(),
+                'style' => $pStyle->getBorderBottomStyle(),
+            ],
+        ];
+
+        // Prüfe ob überhaupt Borders gesetzt sind
+        $hasBorders = false;
+        foreach ($borders as $border) {
+            if ($border['size'] !== null && $border['size'] !== '') {
+                $hasBorders = true;
+                break;
+            }
+        }
+
+        if (!$hasBorders) {
+            return null;
+        }
+
+        return md5(serialize($borders));
+    }
+
+    /**
+     * Baut die CSS Border-Styles für ein Element.
+     */
+    private function buildBorderStyle(DocTextRun $element): string
+    {
+        $pStyle = $element->getParagraphStyle();
+        $styles = [];
+
+        $borders = [
+            'top'    => [
+                'size'  => $pStyle->getBorderTopSize(),
+                'color' => $pStyle->getBorderTopColor(),
+                'style' => $pStyle->getBorderTopStyle(),
+            ],
+            'left'   => [
+                'size'  => $pStyle->getBorderLeftSize(),
+                'color' => $pStyle->getBorderLeftColor(),
+                'style' => $pStyle->getBorderLeftStyle(),
+            ],
+            'right'  => [
+                'size'  => $pStyle->getBorderRightSize(),
+                'color' => $pStyle->getBorderRightColor(),
+                'style' => $pStyle->getBorderRightStyle(),
+            ],
+            'bottom' => [
+                'size'  => $pStyle->getBorderBottomSize(),
+                'color' => $pStyle->getBorderBottomColor(),
+                'style' => $pStyle->getBorderBottomStyle(),
+            ],
+        ];
+
+        // Prüfe ob alle Borders identisch sind
+        $first        = $borders['top'];
+        $allIdentical = true;
+        foreach (['left', 'right', 'bottom'] as $side) {
+            if ($borders[$side]['size'] !== $first['size'] ||
+                $borders[$side]['color'] !== $first['color'] ||
+                $borders[$side]['style'] !== $first['style']) {
+                $allIdentical = false;
+                break;
+            }
+        }
+
+        // Mapping Word-Styles zu CSS
+        $styleMapping = [
+            'single' => 'solid',
+            'double' => 'double',
+            'dotted' => 'dotted',
+            'dashed' => 'dashed',
+            'none'   => 'none',
+        ];
+
+        if ($allIdentical && $first['size'] !== null && $first['size'] !== '') {
+            // Einheitlicher Border
+            $width    = $this->twipsToCm($first['size']);
+            $style    = $styleMapping[$first['style']] ?? 'solid';
+            $color    = '#' . ($first['color'] ?? '000000');
+            $styles[] = sprintf('border: %scm %s %s;', $width, $style, $color);
+        } else {
+            // Individuelle Borders
+            foreach ($borders as $side => $border) {
+                if ($border['size'] !== null && $border['size'] !== '') {
+                    $width    = $this->twipsToCm($border['size']);
+                    $style    = $styleMapping[$border['style']] ?? 'solid';
+                    $color    = '#' . ($border['color'] ?? '000000');
+                    $styles[] = sprintf('border-%s: %scm %s %s;', $side, $width, $style, $color);
+                }
+            }
+        }
+
+        // Padding innerhalb des Borders
+        $styles[] = 'padding: 0.2cm;';
+
+        return implode(' ', $styles);
+    }
+
+    /**
+     * Entfernt Border-Styles aus HTML (da sie vom Container kommen).
+     */
+    private function removeBorderStyles(string $html): string
+    {
+        // Entferne border:* Styles
+        $html = preg_replace('/\s*border:\s*[^;]+;/', '', $html);
+        $html = preg_replace('/\s*border-top:\s*[^;]+;/', '', $html);
+        $html = preg_replace('/\s*border-left:\s*[^;]+;/', '', $html);
+        $html = preg_replace('/\s*border-right:\s*[^;]+;/', '', $html);
+        $html = preg_replace('/\s*border-bottom:\s*[^;]+;/', '', $html);
+
+        // Entferne padding:* Styles (da wir es im Container haben)
+        return preg_replace('/\s*padding:\s*[^;]+;/', '', $html);
     }
 
     /**
@@ -183,6 +443,56 @@ class DocumentProcessor
             ),
             true
         );
+    }
+
+    /**
+     * Prüft, ob ein TextBreak-Element ein leerer Absatz ist (statt manuellem Umbruch).
+     *
+     * Ein TextBreak ist ein leerer Absatz wenn:
+     * - Wir in einer Border-Gruppe sind, ODER
+     * - Vorheriges und nächstes Element sind TextRuns mit identischen Borders
+     */
+    private function isEmptyParagraphBreak(array $elements, int $currentIndex, ?string $openBorderSignature): bool
+    {
+        // Wenn wir in einer Border-Gruppe sind: immer leerer Absatz
+        if ($openBorderSignature !== null) {
+            return true;
+        }
+
+        $prevElement = $elements[$currentIndex - 1] ?? null;
+        $nextElement = $elements[$currentIndex + 1] ?? null;
+
+        // Beide müssen TextRuns sein
+        if (!$prevElement instanceof DocTextRun || !$nextElement instanceof DocTextRun) {
+            return false;
+        }
+
+        // Beide müssen identische Borders haben
+        $prevBorders = $this->getBorderSignature($prevElement);
+        $nextBorders = $this->getBorderSignature($nextElement);
+
+        return $prevBorders !== null && $prevBorders === $nextBorders;
+    }
+
+    /**
+     * Extrahiert das margin-bottom (spaceAfter) aus einem TextRun-Element.
+     *
+     * @param DocTextRun|null $element Das Element, aus dem der Abstand extrahiert werden soll
+     *
+     * @return string CSS margin-bottom Style (immer vorhanden, Default: 0)
+     */
+    private function getMarginBottomFromElement(?DocTextRun $element): string
+    {
+        if ($element === null) {
+            return 'margin-bottom: 0cm;';
+        }
+
+        $spaceAfter = $element->getParagraphStyle()?->getSpaceAfter();
+        if ((float)$spaceAfter === 0.0) {
+            return 'margin-bottom: 0cm;';
+        }
+
+        return sprintf('margin-bottom: %scm;', $this->twipsToCm($spaceAfter));
     }
 
     /**

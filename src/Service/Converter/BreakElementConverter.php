@@ -20,7 +20,6 @@ class BreakElementConverter implements ElementConverterInterface
     public function convert(object $element, ConversionContext $context): string
     {
         /** @var DocBreak $element */
-
         // Gelöschte Breaks ignorieren
         if ($element->getFontStyle()?->isStrikethrough()) {
             return '';

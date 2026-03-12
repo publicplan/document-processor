@@ -37,6 +37,7 @@ class ElementConverterRegistry
         $this->register(new BreakElementConverter());
         $this->register(new LinkElementConverter());
         $this->register(new TextRunElementConverter());
+        $this->register(new TextBoxElementConverter());
         $this->register(new ListElementConverter());
         $this->register(new PageBreakElementConverter());
         $this->register(new TableElementConverter());
