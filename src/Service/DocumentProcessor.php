@@ -51,12 +51,23 @@ class DocumentProcessor
     public function process(string $filePath, string $sourceFilename = ''): ProcessedDocument
     {
         try {
+            $hasChanges = false;
             $result     = $this->documentLoader->loadWithChangeCheck($filePath, $hasChanges);
-            $hasChanges = $hasChanges ?? false;
             $context    = new ConversionContext();
 
             $html = $this->convertToHtml($result, $context);
             $html = $this->postProcessHtml($html);
+
+            if ($hasChanges) {
+                $context->addMessage(
+                    ParserError::create(
+                        ParserError::CONTAINS_UNACCEPTED_CHANGES,
+                        ParserError::SEVERITY_ERROR,
+                        'Das Dokument enthält nicht übernommene Änderungen (Änderungsverfolgung).'
+                    ),
+                    true
+                );
+            }
 
             return new ProcessedDocument(
                 html: $html,
