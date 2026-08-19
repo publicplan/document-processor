@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
 use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
+use PhpOffice\PhpWord\Style\Font;
 use Publicplan\DocumentProcessor\Model\ConversionContext;
 
 /**
@@ -21,7 +22,7 @@ class BreakElementConverter implements ElementConverterInterface
     {
         /** @var DocBreak $element */
         // Gelöschte Breaks ignorieren
-        if ($element->getFontStyle()?->isStrikethrough()) {
+        if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
             return '';
         }
 

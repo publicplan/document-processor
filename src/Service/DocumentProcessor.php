@@ -52,9 +52,11 @@ class DocumentProcessor
     public function process(string $filePath, string $sourceFilename = ''): ProcessedDocument
     {
         try {
-            $hasChanges = false;
-            $result     = $this->documentLoader->loadWithChangeCheck($filePath, $hasChanges);
-            $context    = new ConversionContext();
+            $hasChanges      = false;
+            $defaultFontSize = null;
+            $result          = $this->documentLoader->loadWithDocumentMetadata($filePath, $hasChanges, $defaultFontSize);
+            $context         = new ConversionContext();
+            $context->setDefaultFontSize($defaultFontSize);
 
             $html = $this->convertToHtml($result, $context);
             $html = $this->postProcessHtml($html);

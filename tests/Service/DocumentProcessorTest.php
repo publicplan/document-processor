@@ -63,21 +63,20 @@ class DocumentProcessorTest extends TestCase
      */
     public function testProcessReturnsProcessedDocument(): void
     {
-        // Wir mocken das Ergebnis, da wir kein echtes DOCX haben
         $loader = $this->createMock(DocumentLoader::class);
-        $mockPhpWord = $this->createMock(\PhpOffice\PhpWord\PhpWord::class);
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
         
         $loader->expects($this->once())
-            ->method('loadWithChangeCheck')
-            ->willReturn($mockPhpWord);
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
 
         $processor = new DocumentProcessor($loader);
-        
-        // Da wir das PhpWord-Objekt nicht richtig mocken können (keine Sections),
-        // erwarten wir eine Exception wegen der Konvertierung
-        $this->expectException(\Exception::class);
-        
-        $processor->process('/test/file.docx', 'test.docx');
+
+        $result = $processor->process('/test/file.docx', 'test.docx');
+
+        $this->assertInstanceOf(ProcessedDocument::class, $result);
+        $this->assertSame('', $result->html);
+        $this->assertSame('test.docx', $result->sourceFilename);
     }
 
     /**

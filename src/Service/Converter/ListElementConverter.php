@@ -11,6 +11,7 @@ use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
 use PhpOffice\PhpWord\SimpleType\Jc;
 use PhpOffice\PhpWord\Style;
 use PhpOffice\PhpWord\Style\Numbering;
+use PhpOffice\PhpWord\Style\Font;
 use Publicplan\DocumentProcessor\Enum\ListConfigType;
 use Publicplan\DocumentProcessor\Model\ConversionContext;
 use Publicplan\DocumentProcessor\Model\ListConfig;
@@ -51,7 +52,7 @@ class ListElementConverter implements ElementConverterInterface
         $text = '';
 
         foreach ($element->getElements() as $textElement) {
-            $elementText = $this->convertSubElement($textElement);
+            $elementText = $this->convertSubElement($textElement, $context);
 
             if ($elementText !== null) {
                 $text .= $elementText;
@@ -87,18 +88,18 @@ class ListElementConverter implements ElementConverterInterface
     /**
      * Konvertiert ein Unter-Element der Liste.
      */
-    private function convertSubElement(object $textElement): ?string
+    private function convertSubElement(object $textElement, ConversionContext $context): ?string
     {
         if ($textElement instanceof DocBreak) {
             return $this->convertBreakElement($textElement);
         }
 
         if ($textElement instanceof DocText) {
-            return $this->convertTextElement($textElement);
+            return $this->convertTextElement($textElement, $context);
         }
 
         if ($textElement instanceof DocLink) {
-            return $this->convertLinkElement($textElement);
+            return $this->convertLinkElement($textElement, $context);
         }
 
         return null;
@@ -109,7 +110,7 @@ class ListElementConverter implements ElementConverterInterface
      */
     private function convertBreakElement(DocBreak $element): string
     {
-        if ($element->getFontStyle()?->isStrikethrough()) {
+        if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
             return '';
         }
 
@@ -119,32 +120,24 @@ class ListElementConverter implements ElementConverterInterface
     /**
      * Konvertiert Text in HTML mit Formatierung.
      */
-    private function convertTextElement(DocText $element): string
+    private function convertTextElement(DocText $element, ConversionContext $context): string
     {
-        $text = $element->getText() ?? '';
+        $text      = $element->getText() ?? '';
+        $fontStyle = $element->getFontStyle();
 
-        if ($text === '' || $element->getFontStyle()?->isStrikethrough()) {
+        if ($text === '' || ($fontStyle instanceof Font && $fontStyle->isStrikethrough())) {
             return '##deleted##';
         }
 
-        return new TextElementConverter()->convert($element, new ConversionContext());
+        return new TextElementConverter()->convert($element, $context);
     }
 
     /**
      * Konvertiert einen Link in HTML.
      */
-    private function convertLinkElement(DocLink $element): string
+    private function convertLinkElement(DocLink $element, ConversionContext $context): string
     {
-        if ($element->getFontStyle()?->isStrikethrough()) {
-            return '##deleted##';
-        }
-
-        /** @noinspection HtmlUnknownTarget */
-        return sprintf(
-            '<a href="%s">%s</a>',
-            htmlspecialchars($element->getSource(), ENT_QUOTES, 'UTF-8'),
-            htmlspecialchars($element->getText(), ENT_QUOTES, 'UTF-8')
-        );
+        return (new LinkElementConverter())->convert($element, $context);
     }
 
     /**

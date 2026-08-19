@@ -25,10 +25,11 @@ class TextElementConverter implements ElementConverterInterface
     public function convert(object $element, ConversionContext $context): string
     {
         /** @var DocText $element */
-        $text = $element->getText() ?? '';
+        $text      = $element->getText() ?? '';
+        $fontStyle = $element->getFontStyle();
 
         // Gelöschter Text (Strikethrough) wird als Marker zurückgegeben
-        if ($text === '' || $element->getFontStyle()?->isStrikethrough()) {
+        if ($text === '' || ($fontStyle instanceof Font && $fontStyle->isStrikethrough())) {
             return '##deleted##';
         }
 
@@ -53,7 +54,7 @@ class TextElementConverter implements ElementConverterInterface
         $tags      = [];
         $fontStyle = $element->getFontStyle();
 
-        if (!$fontStyle) {
+        if (!$fontStyle instanceof Font) {
             return $tags;
         }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Service;
 
 use Exception;
+use PhpOffice\PhpWord\Settings;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
@@ -128,9 +129,91 @@ class DocumentLoader
      */
     public function loadWithChangeCheck(string $filePath, ?bool &$hasChanges = null): PhpWord
     {
+        $defaultFontSize = null;
+        return $this->loadWithDocumentMetadata($filePath, $hasChanges, $defaultFontSize);
+    }
+
+    /**
+     * Lädt das Dokument, prüft auf Änderungen und extrahiert Metadaten.
+     *
+     * @param string      $filePath        Absoluter Pfad zur .docx Datei
+     * @param bool|null   $hasChanges      Output-Parameter: True wenn Track-Changes vorhanden
+     * @param float|null  $defaultFontSize Output-Parameter: Effektive Dokument-Default-Fontgröße
+     *
+     * @return PhpWord Das geladene Dokument
+     * @throws DocumentLoadException Wenn das Dokument nicht geladen werden kann
+     */
+    public function loadWithDocumentMetadata(
+        string $filePath,
+        ?bool &$hasChanges = null,
+        ?float &$defaultFontSize = null
+    ): PhpWord
+    {
         $doc        = $this->load($filePath);
         $hasChanges = $this->hasUnacceptedChanges($filePath);
+        $defaultFontSize = $this->extractDocumentDefaultFontSize($filePath) ?? (float)Settings::DEFAULT_FONT_SIZE;
 
         return $doc;
+    }
+
+    /**
+     * Extrahiert die in styles.xml definierte Default-Fontgröße in pt.
+     *
+     * @return float|null Defaultgröße in pt oder null wenn nicht explizit im Dokument gesetzt
+     * @throws DocumentLoadException Wenn die DOCX-Datei nicht geöffnet oder styles.xml nicht geparst werden kann
+     */
+    public function extractDocumentDefaultFontSize(string $filePath): ?float
+    {
+        $zip = new ZipArchive();
+
+        if ($zip->open($filePath) !== true) {
+            throw new DocumentLoadException(
+                'Konnte die Datei nicht öffnen',
+                $filePath,
+                'ZIP-Archiv konnte nicht geöffnet werden'
+            );
+        }
+
+        try {
+            $stylesXml = $zip->getFromName('word/styles.xml');
+            if ($stylesXml === false) {
+                return null;
+            }
+
+            $document = new \DOMDocument();
+            $previous = libxml_use_internal_errors(true);
+            try {
+                if (!$document->loadXML($stylesXml)) {
+                    throw new DocumentLoadException(
+                        'Styles konnten nicht gelesen werden',
+                        $filePath,
+                        'styles.xml enthält ungültiges XML'
+                    );
+                }
+            } finally {
+                libxml_clear_errors();
+                libxml_use_internal_errors($previous);
+            }
+
+            $xpath = new \DOMXPath($document);
+            $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+
+            $value = $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:docDefaults/w:rPrDefault/w:rPr/w:sz/@w:val')
+                ?? $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:docDefaults/w:rPrDefault/w:rPr/w:szCs/@w:val');
+
+            return $value !== null ? $value / 2.0 : null;
+        } finally {
+            $zip->close();
+        }
+    }
+
+    private function readDocDefaultFontSizeHalfPoints(\DOMXPath $xpath, string $query): ?float
+    {
+        $value = $xpath->evaluate("string($query)");
+        if (!is_string($value) || $value === '' || !is_numeric($value)) {
+            return null;
+        }
+
+        return (float)$value;
     }
 }

@@ -7,6 +7,7 @@ namespace Publicplan\DocumentProcessor\Service\Converter;
 use PhpOffice\PhpWord\Element\Table as DocTable;
 use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
 use PhpOffice\PhpWord\Element\TextRun as DocTextRun;
+use PhpOffice\PhpWord\Style\Font;
 use Publicplan\DocumentProcessor\Model\ConversionContext;
 use Publicplan\DocumentProcessor\Model\ParserError;
 
@@ -95,7 +96,7 @@ class TableElementConverter implements ElementConverterInterface
      */
     private function convertBreakElement(DocBreak $element): string
     {
-        if ($element->getFontStyle()?->isStrikethrough()) {
+        if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
             return '';
         }
 

@@ -36,25 +36,130 @@ class TextRunElementConverter implements ElementConverterInterface
     }
 
     /**
-     * Konvertiert alle Unter-Elemente des TextRuns.
+     * Konvertiert alle Unter-Elemente des TextRuns und gruppiert sie nach Schriftgröße.
+     * Aufeinanderfolgende Elemente mit gleicher Schriftgröße werden zusammengefasst.
      */
     private function convertSubElements(DocTextRun $element, ConversionContext $context): string
     {
-        $text             = '';
         $elementConverter = new ElementConverterRegistry();
         $elementConverter->registerDefaultConverters();
 
+        // Phase 1: Sammle alle Elemente mit ihrer aufgelösten Schriftgröße
+        $annotatedElements = [];
         foreach ($element->getElements() as $textElement) {
             $elementText = $elementConverter->convert($textElement, $context);
 
             if ($elementText !== null) {
-                $text .= $elementText;
+                // Bestimme die Schriftgröße für dieses Element
+                $fontSize = $this->extractFontSize($textElement, $element);
+                $annotatedElements[] = [
+                    'html'     => $elementText,
+                    'fontSize' => $fontSize,
+                ];
             } else {
                 $this->handleInvalidElement($textElement, $element, $context);
             }
         }
 
+        if (empty($annotatedElements)) {
+            return '';
+        }
+
+        // Phase 2: Gruppiere aufeinanderfolgende Elemente mit gleicher Schriftgröße
+        $groups = $this->groupElementsByFontSize($annotatedElements);
+
+        // Phase 3: Rendere Gruppen, wrappen nur wenn Schriftgröße vom Default abweicht
+        $text = '';
+        foreach ($groups as $group) {
+            $text .= $this->renderFontGroup($group, $context->getDefaultFontSize());
+        }
+
         return $text;
+    }
+
+    /**
+     * Extrahiert die Schriftgröße aus einem Element.
+     * Bevorzugt explizite Font-Größen, fällt sonst auf Paragraph-Style des TextRuns zurück.
+     */
+    private function extractFontSize(object $textElement, DocTextRun $parentRun): ?float
+    {
+        // Für Text und Link: Versuche zuerst, direkte Font-Größe zu resolven
+        // Aber nutze das Paragraph-Style des TextRuns, nicht das eingebettete Paragraph der Font
+        if ($textElement instanceof \PhpOffice\PhpWord\Element\Text) {
+            $textFont = $textElement->getFontStyle();
+            // Nur wenn Font direktes Size hat, nutze es
+            if ($textFont instanceof \PhpOffice\PhpWord\Style\Font && $textFont->getSize() !== null) {
+                return (float)$textFont->getSize();
+            }
+            // Sonst: nutze Paragraph-Style des TextRuns
+            return FontScaleHelper::resolveFontSize(null, $parentRun->getParagraphStyle());
+        }
+
+        // Link-Elemente
+        if ($textElement instanceof \PhpOffice\PhpWord\Element\Link) {
+            $linkFont = $textElement->getFontStyle();
+            // Nur wenn Font direktes Size hat, nutze es
+            if ($linkFont instanceof \PhpOffice\PhpWord\Style\Font && $linkFont->getSize() !== null) {
+                return (float)$linkFont->getSize();
+            }
+            // Sonst: nutze Paragraph-Style des TextRuns
+            return FontScaleHelper::resolveFontSize(null, $parentRun->getParagraphStyle());
+        }
+
+        // Andere Element-Typen: nutze Paragraph-Stil
+        return FontScaleHelper::resolveFontSize(null, $parentRun->getParagraphStyle());
+    }
+
+    /**
+     * Gruppiert annotierte Elemente: aufeinanderfolgende mit gleicher Schriftgröße werden zusammengefasst.
+     */
+    private function groupElementsByFontSize(array $annotatedElements): array
+    {
+        $groups = [];
+        $currentGroup = null;
+
+        foreach ($annotatedElements as $item) {
+            if ($currentGroup === null || $currentGroup['fontSize'] !== $item['fontSize']) {
+                // Neue Gruppe starten
+                if ($currentGroup !== null) {
+                    $groups[] = $currentGroup;
+                }
+                $currentGroup = [
+                    'fontSize' => $item['fontSize'],
+                    'htmlParts' => [$item['html']],
+                ];
+            } else {
+                // Zur aktuellen Gruppe hinzufügen
+                $currentGroup['htmlParts'][] = $item['html'];
+            }
+        }
+
+        if ($currentGroup !== null) {
+            $groups[] = $currentGroup;
+        }
+
+        return $groups;
+    }
+
+    /**
+     * Rendert eine Gruppe von Elementen mit gleicher Schriftgröße.
+     * Wrappet nur mit Span, wenn Schriftgröße vom Default abweicht.
+     */
+    private function renderFontGroup(array $group, ?float $defaultFontSize): string
+    {
+        $html = implode('', $group['htmlParts']);
+        $fontSize = $group['fontSize'];
+
+        // Erstelle Scale-Attribut - nur wenn Schriftgröße vom Default abweicht
+        $scaleAttr = FontScaleHelper::createScaleAttribute($fontSize, $defaultFontSize);
+
+        if ($scaleAttr === null) {
+            // Kein Override - plain HTML ohne Span
+            return $html;
+        }
+
+        // Override erkannt - wrappen in Span mit Attribut
+        return sprintf('<span %s>%s</span>', $scaleAttr, $html);
     }
 
     /**

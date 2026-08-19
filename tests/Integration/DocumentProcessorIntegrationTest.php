@@ -321,6 +321,10 @@ class DocumentProcessorIntegrationTest extends TestCase
      */
     public function testOutputIsCompatibleWithTwigTranspiler(): void
     {
+        if (!class_exists(ProsaExpressionLinter::class) || !class_exists(TwigTranspilerService::class)) {
+            $this->markTestSkipped('Twig-Transpiler-Abhängigkeiten sind in diesem Repo-Kontext nicht verfügbar.');
+        }
+
         $filepath = $this->createSimpleDocx('for_transpiler.docx', 'Test mit Platzhalter');
 
         $result = $this->processor->process($filepath, 'for_transpiler.docx');

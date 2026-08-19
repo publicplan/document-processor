@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Tests\Service;
 
+use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\PhpWord;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
 use PHPUnit\Framework\TestCase;
@@ -94,6 +96,26 @@ class DocumentLoaderTest extends TestCase
             $this->expectException(DocumentLoadException::class);
             
             $this->loader->hasUnacceptedChanges($tempFile);
+        } finally {
+            unlink($tempFile);
+        }
+    }
+
+    public function testExtractDocumentDefaultFontSizeFromStylesXml(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $phpWord->setDefaultFontSize(14);
+        $phpWord->addSection()->addText('Test');
+
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($tempFile);
+
+        try {
+            $size = $this->loader->extractDocumentDefaultFontSize($tempFile);
+            $this->assertSame(14.0, $size);
         } finally {
             unlink($tempFile);
         }

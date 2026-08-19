@@ -16,6 +16,8 @@ class ConversionContext
     /** @var array<string, bool> */
     private array $distinctMessageHashes = [];
 
+    private ?float $defaultFontSize = null;
+
     public function __construct(
         private readonly bool $trackDistinctMessages = true
     )
@@ -99,5 +101,15 @@ class ConversionContext
     public function hasWarnings(): bool
     {
         return !empty($this->messages['warnings']);
+    }
+
+    public function setDefaultFontSize(?float $defaultFontSize): void
+    {
+        $this->defaultFontSize = $defaultFontSize;
+    }
+
+    public function getDefaultFontSize(): ?float
+    {
+        return $this->defaultFontSize;
     }
 }

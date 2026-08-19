@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Service\Converter;
 
 use PhpOffice\PhpWord\Element\Link as DocLink;
+use PhpOffice\PhpWord\Style\Font;
 use Publicplan\DocumentProcessor\Model\ConversionContext;
 
 /**
@@ -22,7 +23,7 @@ class LinkElementConverter implements ElementConverterInterface
         /** @var DocLink $element */
 
         // Gelöschte Links ignorieren
-        if ($element->getFontStyle()?->isStrikethrough()) {
+        if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
             return '##deleted##';
         }
 
