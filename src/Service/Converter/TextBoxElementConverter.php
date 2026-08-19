@@ -31,15 +31,16 @@ class TextBoxElementConverter implements ElementConverterInterface
         if ($borderSize !== null && $borderSize > 0) {
             // Border-Größe ist in Points (pt), wir konvertieren zu cm
             // 1 pt = 0.0352778 cm
-            $width       = round($borderSize * 0.0352778, 2);
-            $color       = $borderColor ?? '000000';
-            $boxStyles[] = sprintf('border: %scm solid #%s;', $width, $color);
+            $width = round($borderSize * 0.0352778, 2);
+            $width       = BorderStyleHelper::normalizeBorderWidthCm($width);
+            $color       = BorderStyleHelper::formatCssHexColor($borderColor, '000000') ?? '#000000';
+            $boxStyles[] = sprintf('border: %scm solid %s;', $width, $color);
         }
 
         // Background color
-        $bgColor = $style?->getBgColor();
+        $bgColor = BorderStyleHelper::formatCssHexColor($style?->getBgColor());
         if ($bgColor !== null) {
-            $boxStyles[] = sprintf('background-color: #%s;', $bgColor);
+            $boxStyles[] = sprintf('background-color: %s;', $bgColor);
         }
 
         // Inner margins (Padding)

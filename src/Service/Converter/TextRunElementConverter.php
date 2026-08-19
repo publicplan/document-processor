@@ -242,21 +242,27 @@ class TextRunElementConverter implements ElementConverterInterface
 
         if ($allIdentical) {
             // Einheitlicher Border
-            $width = $this->twipsToCm($borders['top']['size']);
+            $width = BorderStyleHelper::normalizeBorderWidthCm($this->twipsToCm($borders['top']['size']));
             $style = $this->convertWordStyleToCss($borders['top']['style']);
-            $color = '#' . $borders['top']['color'];
+            $color = BorderStyleHelper::formatCssHexColor($borders['top']['color']);
 
-            return sprintf('border: %scm %s %s; %s', $width, $style, $color, $padding);
+            return sprintf('border: %scm %s%s; %s', $width, $style, $color !== null ? ' ' . $color : '', $padding);
         }
 
         // Individuelle Borders
         $styles = [];
         foreach ($borders as $side => $border) {
             if ($border['size'] !== null && $border['size'] !== '') {
-                $width    = $this->twipsToCm($border['size']);
+                $width    = BorderStyleHelper::normalizeBorderWidthCm($this->twipsToCm($border['size']));
                 $style    = $this->convertWordStyleToCss($border['style']);
-                $color    = '#' . $border['color'];
-                $styles[] = sprintf('border-%s: %scm %s %s;', $side, $width, $style, $color);
+                $color    = BorderStyleHelper::formatCssHexColor($border['color']);
+                $styles[] = sprintf(
+                    'border-%s: %scm %s%s;',
+                    $side,
+                    $width,
+                    $style,
+                    $color !== null ? ' ' . $color : ''
+                );
             }
         }
 

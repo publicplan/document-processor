@@ -80,7 +80,7 @@ class TextRunElementConverterTest extends TestCase
 
         $result = $this->converter->convert($textRun, $this->context);
 
-        $this->assertStringContainsString('border: 0.01cm solid #000000;', $result);
+        $this->assertStringContainsString('border: 0.0264cm solid #000000;', $result);
         $this->assertStringContainsString('padding: 0.2cm;', $result);
         $this->assertStringNotContainsString('border-top:', $result);
     }
@@ -92,13 +92,13 @@ class TextRunElementConverterTest extends TestCase
     {
         $textRun = $this->createTextRunWithBorders([
             'top'    => ['size' => 8, 'color' => 'FF0000', 'style' => 'single'],
-            'bottom' => ['size' => 8, 'color' => 'FF0000', 'style' => 'single'],
+            'bottom' => ['size' => 8, 'color' => '00FF00', 'style' => 'single'],
         ]);
 
         $result = $this->converter->convert($textRun, $this->context);
 
-        $this->assertStringContainsString('border-top: 0.01cm solid #FF0000;', $result);
-        $this->assertStringContainsString('border-bottom: 0.01cm solid #FF0000;', $result);
+        $this->assertStringContainsString('border-top: 0.0264cm solid #FF0000;', $result);
+        $this->assertStringContainsString('border-bottom: 0.0264cm solid #00FF00;', $result);
         $this->assertStringContainsString('padding: 0.2cm;', $result);
         $this->assertStringNotContainsString('border-left:', $result);
         $this->assertStringNotContainsString('border-right:', $result);
@@ -143,7 +143,7 @@ class TextRunElementConverterTest extends TestCase
 
         $result = $this->converter->convert($textRun, $this->context);
 
-        $this->assertStringContainsString('border: 0.01cm solid #000000;', $result);
+        $this->assertStringContainsString('border: 0.0264cm solid #000000;', $result);
         $this->assertStringContainsString('padding: 0.2cm;', $result);
         $this->assertStringContainsString('text-align: center;', $result);
     }
@@ -162,7 +162,7 @@ class TextRunElementConverterTest extends TestCase
 
         $result = $this->converter->convert($textRun, $this->context);
 
-        $this->assertStringContainsString('border: 0.01cm double #000000;', $result);
+        $this->assertStringContainsString('border: 0.0264cm double #000000;', $result);
         $this->assertStringContainsString('padding: 0.2cm;', $result);
     }
 
@@ -180,7 +180,7 @@ class TextRunElementConverterTest extends TestCase
 
         $result = $this->converter->convert($textRun, $this->context);
 
-        $this->assertStringContainsString('border: 0.01cm solid #000000;', $result);
+        $this->assertStringContainsString('border: 0.0264cm solid #000000;', $result);
         $this->assertStringContainsString('padding: 0.2cm;', $result);
     }
 
