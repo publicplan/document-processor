@@ -76,6 +76,38 @@ class DocumentProcessorBorderTest extends TestCase
     }
 
     /**
+     * Test: Border-Farbe "auto" wird im Style weggelassen.
+     */
+    public function testAutoBorderColorIsOmittedFromStyle(): void
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+
+        $borderStyle = new Paragraph();
+        $borderStyle->setBorderTopSize(4);
+        $borderStyle->setBorderTopColor('auto');
+        $borderStyle->setBorderTopStyle('single');
+        $borderStyle->setBorderLeftSize(4);
+        $borderStyle->setBorderLeftColor('auto');
+        $borderStyle->setBorderLeftStyle('single');
+        $borderStyle->setBorderRightSize(4);
+        $borderStyle->setBorderRightColor('auto');
+        $borderStyle->setBorderRightStyle('single');
+        $borderStyle->setBorderBottomSize(4);
+        $borderStyle->setBorderBottomColor('auto');
+        $borderStyle->setBorderBottomStyle('single');
+
+        $textRun = $section->addTextRun($borderStyle);
+        $textRun->addText('Erster Text', ['color' => 'FF0000']);
+        $textRun->addText(' Zweiter Text', ['color' => '0000FF']);
+
+        $result = $this->invokeConvertToHtml($phpWord);
+
+        $this->assertStringContainsString('border: 0.0264cm solid;', $result);
+        $this->assertStringNotContainsString('border: 0.0264cm solid #FF0000;', $result);
+    }
+
+    /**
      * Test: Absätze mit unterschiedlichen Borders erzeugen separate Container.
      */
     public function testParagraphsWithDifferentBordersCreateSeparateContainers(): void

@@ -33,8 +33,12 @@ class TextBoxElementConverter implements ElementConverterInterface
             // 1 pt = 0.0352778 cm
             $width = round($borderSize * 0.0352778, 2);
             $width       = BorderStyleHelper::normalizeBorderWidthCm($width);
-            $color       = BorderStyleHelper::formatCssHexColor($borderColor, '000000') ?? '#000000';
-            $boxStyles[] = sprintf('border: %scm solid %s;', $width, $color);
+            $color       = BorderStyleHelper::formatCssHexColor($borderColor);
+            $boxStyles[] = sprintf(
+                'border: %scm solid%s;',
+                $width,
+                $color !== null ? ' ' . $color : ''
+            );
         }
 
         // Background color

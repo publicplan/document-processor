@@ -13,16 +13,11 @@ final class BorderStyleHelper
         return max($widthCm, self::MIN_WKHTMLTOPDF_BORDER_WIDTH_CM);
     }
 
-    public static function formatCssHexColor(?string $color, ?string $fallback = null): ?string
+    public static function formatCssHexColor(?string $color): ?string
     {
         $normalizedColor = self::normalizeColor($color);
         if ($normalizedColor !== null) {
             return '#' . $normalizedColor;
-        }
-
-        $normalizedFallback = self::normalizeColor($fallback);
-        if ($normalizedFallback !== null) {
-            return '#' . $normalizedFallback;
         }
 
         return null;

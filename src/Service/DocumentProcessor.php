@@ -20,6 +20,7 @@ use Publicplan\DocumentProcessor\Model\ConversionContext;
 use Publicplan\DocumentProcessor\Model\ListConfig;
 use Publicplan\DocumentProcessor\Model\ParserError;
 use Publicplan\DocumentProcessor\Model\ProcessedDocument;
+use Publicplan\DocumentProcessor\Service\Converter\BorderStyleHelper;
 use Publicplan\DocumentProcessor\Service\Converter\ElementConverterRegistry;
 use Publicplan\DocumentProcessor\Service\Converter\ListElementConverter;
 
@@ -351,18 +352,24 @@ class DocumentProcessor
 
         if ($allIdentical && $first['size'] !== null && $first['size'] !== '') {
             // Einheitlicher Border
-            $width    = $this->twipsToCm($first['size']);
+            $width    = BorderStyleHelper::normalizeBorderWidthCm($this->twipsToCm($first['size']));
             $style    = $styleMapping[$first['style']] ?? 'solid';
-            $color    = '#' . ($first['color'] ?? '000000');
-            $styles[] = sprintf('border: %scm %s %s;', $width, $style, $color);
+            $color    = BorderStyleHelper::formatCssHexColor($first['color']);
+            $styles[] = sprintf('border: %scm %s%s;', $width, $style, $color !== null ? ' ' . $color : '');
         } else {
             // Individuelle Borders
             foreach ($borders as $side => $border) {
                 if ($border['size'] !== null && $border['size'] !== '') {
-                    $width    = $this->twipsToCm($border['size']);
+                    $width    = BorderStyleHelper::normalizeBorderWidthCm($this->twipsToCm($border['size']));
                     $style    = $styleMapping[$border['style']] ?? 'solid';
-                    $color    = '#' . ($border['color'] ?? '000000');
-                    $styles[] = sprintf('border-%s: %scm %s %s;', $side, $width, $style, $color);
+                    $color    = BorderStyleHelper::formatCssHexColor($border['color']);
+                    $styles[] = sprintf(
+                        'border-%s: %scm %s%s;',
+                        $side,
+                        $width,
+                        $style,
+                        $color !== null ? ' ' . $color : ''
+                    );
                 }
             }
         }
