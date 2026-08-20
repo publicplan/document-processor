@@ -325,6 +325,90 @@ class DocumentProcessorIntegrationTest extends TestCase
     }
 
     /**
+     * Test: Tabellenrahmen aus Table-Style werden ins HTML übernommen.
+     */
+    public function testProcessTableDocumentWithTableBorders(): void
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+
+        $phpWord->addTableStyle('borderedTable', [
+            'borderTopSize' => 12,
+            'borderTopColor' => 'FF0000',
+            'borderRightSize' => 12,
+            'borderRightColor' => 'FF0000',
+            'borderBottomSize' => 12,
+            'borderBottomColor' => 'FF0000',
+            'borderLeftSize' => 12,
+            'borderLeftColor' => 'FF0000',
+            'borderInsideHSize' => 8,
+            'borderInsideHColor' => '00FF00',
+            'borderInsideVSize' => 8,
+            'borderInsideVColor' => '0000FF',
+        ]);
+
+        $table = $section->addTable('borderedTable');
+        $table->addRow();
+        $table->addCell(2000)->addText('A1');
+        $table->addCell(2000)->addText('A2');
+        $table->addRow();
+        $table->addCell(2000)->addText('B1');
+        $table->addCell(2000)->addText('B2');
+
+        $filepath = $this->tempDir . '/table-borders.docx';
+        IOFactory::createWriter($phpWord, 'Word2007')->save($filepath);
+
+        $result = $this->processor->process($filepath, 'table-borders.docx');
+        $html = $result->html;
+
+        $this->assertStringContainsString('border-collapse: collapse;', $html);
+        $this->assertStringContainsString('border: 0.0529cm solid #FF0000;', $html);
+        $this->assertStringContainsString('border-right: 0.0353cm solid #0000FF;', $html);
+        $this->assertStringContainsString('border-bottom: 0.0353cm solid #00FF00;', $html);
+    }
+
+    /**
+     * Test: Zellrahmen überschreiben Tabellenrahmen.
+     */
+    public function testProcessTableDocumentWithCellBorderOverride(): void
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+
+        $phpWord->addTableStyle('fallbackBorders', [
+            'borderSize' => 10,
+            'borderColor' => '999999',
+            'borderInsideHSize' => 10,
+            'borderInsideHColor' => '999999',
+            'borderInsideVSize' => 10,
+            'borderInsideVColor' => '999999',
+        ]);
+
+        $table = $section->addTable('fallbackBorders');
+        $table->addRow();
+        $table->addCell(2000, [
+            'borderTopSize' => 16,
+            'borderTopColor' => '00AA00',
+            'borderRightSize' => 16,
+            'borderRightColor' => '00AA00',
+            'borderBottomSize' => 16,
+            'borderBottomColor' => '00AA00',
+            'borderLeftSize' => 16,
+            'borderLeftColor' => '00AA00',
+        ])->addText('Override');
+        $table->addCell(2000)->addText('Fallback');
+
+        $filepath = $this->tempDir . '/table-cell-border-override.docx';
+        IOFactory::createWriter($phpWord, 'Word2007')->save($filepath);
+
+        $result = $this->processor->process($filepath, 'table-cell-border-override.docx');
+        $html = $result->html;
+
+        $this->assertStringContainsString('border: 0.0706cm solid #00AA00;', $html);
+        $this->assertStringContainsString('border: 0.0441cm solid #999999;', $html);
+    }
+
+    /**
      * Test: Verarbeitung einer DOCX mit Links.
      */
     public function testProcessLinkDocument(): void
