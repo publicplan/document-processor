@@ -100,6 +100,7 @@ class DocumentProcessor
     {
         $text                = '';
         $openListConfig      = null;   // Trackt die aktuell geöffnete Liste
+        $listContinuationMap = [];     // Trackt die nächste Startnummer je logischer Liste
         $openBorderSignature = null;   // Trackt die aktuelle Border-Gruppe
         $openBorderStyle     = '';     // CSS-Styles für die aktuelle Border-Gruppe
         $lastTextRun         = null;   // Merkt sich den letzten TextRun für aufeinanderfolgende TextBreaks
@@ -176,7 +177,7 @@ class DocumentProcessor
                         $openBorderStyle     = '';
                     }
 
-                    $html           = $this->handleListElement($element, $context, $openListConfig, $text);
+                    $html           = $this->handleListElement($element, $context, $openListConfig, $text, $listContinuationMap);
                     $openListConfig = $html['listConfig'];
                     $text           .= $html['content'];
                 } else {
@@ -410,7 +411,8 @@ class DocumentProcessor
         DocList           $element,
         ConversionContext $context,
         ?ListConfig       $openListConfig,
-        string            &$accumulatedText
+        string            &$accumulatedText,
+        array             &$listContinuationMap
     ): array
     {
         $listConverter = $this->converterRegistry->findConverter($element);
@@ -425,22 +427,49 @@ class DocumentProcessor
 
         $listConfig = $listConverter->createListConfig($element); // Liste selbst hat keinen bottom spacing
         $html       = '';
+        $startValue = $this->resolveListStartValue($listConfig, $listContinuationMap);
 
         // Prüfe, ob wir eine neue Liste öffnen müssen
         if ($openListConfig === null) {
             // Neue Liste öffnen
-            $html .= $listConfig->renderStartTag() . PHP_EOL;
-        } elseif ($openListConfig->tag !== $listConfig->tag || $openListConfig->type !== $listConfig->type) {
+            $html .= $listConfig->renderStartTag($startValue) . PHP_EOL;
+        } elseif (!$openListConfig->isSameList($listConfig)) {
             // Verschiedener Listentyp: Alte schließen, neue öffnen
             $accumulatedText .= $openListConfig->renderEndTag() . PHP_EOL;
-            $html            .= $listConfig->renderStartTag() . PHP_EOL;
+            $html            .= $listConfig->renderStartTag($startValue) . PHP_EOL;
         }
         // Sonst: Liste ist bereits offen, füge nur <li> hinzu
 
         // Listen-Item mit bottom spacing hinzufügen
         $html .= $listConverter->convertWithSpacing($element, $context, $bottomSpacingCm);
+        $this->advanceListContinuation($listConfig, $listContinuationMap);
 
         return ['listConfig' => $listConfig, 'content' => $html];
+    }
+
+    /**
+     * Ermittelt den Startwert für eine geordnete Liste auf Basis bereits gerenderter Elemente.
+     */
+    private function resolveListStartValue(ListConfig $listConfig, array $listContinuationMap): int
+    {
+        if (!$listConfig->isOrdered()) {
+            return 1;
+        }
+
+        return $listContinuationMap[$listConfig->sequenceKey] ?? $listConfig->start;
+    }
+
+    /**
+     * Erhöht den nächsten Startwert für eine geordnete Liste um ein Element.
+     */
+    private function advanceListContinuation(ListConfig $listConfig, array &$listContinuationMap): void
+    {
+        if (!$listConfig->isOrdered()) {
+            return;
+        }
+
+        $currentStart = $listContinuationMap[$listConfig->sequenceKey] ?? $listConfig->start;
+        $listContinuationMap[$listConfig->sequenceKey] = $currentStart + 1;
     }
 
     /**

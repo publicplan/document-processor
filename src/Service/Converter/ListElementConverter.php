@@ -9,6 +9,7 @@ use PhpOffice\PhpWord\Element\ListItemRun as DocList;
 use PhpOffice\PhpWord\Element\Text as DocText;
 use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
 use PhpOffice\PhpWord\SimpleType\Jc;
+use PhpOffice\PhpWord\Style\ListItem as ListItemStyle;
 use PhpOffice\PhpWord\Style;
 use PhpOffice\PhpWord\Style\Numbering;
 use PhpOffice\PhpWord\Style\Font;
@@ -215,19 +216,45 @@ class ListElementConverter implements ElementConverterInterface
         $styleName = $element->getStyle()?->getNumStyle();
         /** @var Numbering|null $numStyleObject */
         $numStyleObject = Style::getStyle($styleName);
-        $numLevels      = $numStyleObject?->getLevels();
-        $firstItem      = $numLevels ? reset($numLevels) : null;
+        $numLevels      = $numStyleObject?->getLevels() ?? [];
+        $currentLevel   = $numLevels[$element->getDepth()] ?? null;
+        $firstLevel     = $numLevels ? reset($numLevels) : null;
+        $resolvedLevel  = $currentLevel ?? $firstLevel;
 
-        $listFormat = $firstItem?->getFormat();
+        $listFormat = $resolvedLevel?->getFormat();
+        $listStart  = $resolvedLevel?->getStart() ?? 1;
+        $sequenceKey = $this->buildSequenceKey($element, $styleName, $listFormat);
 
         return match ($listFormat) {
-            ListConfigType::Decimal->value => new ListConfig(tag: 'ol', type: null, bottomSpacingCm: $bottomSpacingCm),
-            ListConfigType::UpperRoman->value => new ListConfig(tag: 'ol', type: 'I', bottomSpacingCm: $bottomSpacingCm),
-            ListConfigType::LowerRoman->value => new ListConfig(tag: 'ol', type: 'i', bottomSpacingCm: $bottomSpacingCm),
-            ListConfigType::UpperLetter->value => new ListConfig(tag: 'ol', type: 'A', bottomSpacingCm: $bottomSpacingCm),
-            ListConfigType::LowerLetter->value => new ListConfig(tag: 'ol', type: 'a', bottomSpacingCm: $bottomSpacingCm),
-            default => new ListConfig(tag: 'ul', type: null, bottomSpacingCm: $bottomSpacingCm)
+            ListConfigType::Decimal->value => new ListConfig(tag: 'ol', type: null, bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
+            ListConfigType::UpperRoman->value => new ListConfig(tag: 'ol', type: 'I', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
+            ListConfigType::LowerRoman->value => new ListConfig(tag: 'ol', type: 'i', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
+            ListConfigType::UpperLetter->value => new ListConfig(tag: 'ol', type: 'A', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
+            ListConfigType::LowerLetter->value => new ListConfig(tag: 'ol', type: 'a', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
+            default => new ListConfig(tag: 'ul', type: null, bottomSpacingCm: $bottomSpacingCm, sequenceKey: $sequenceKey)
         };
+    }
+
+    private function buildSequenceKey(DocList $element, ?string $styleName, ?string $listFormat): string
+    {
+        $style         = $element->getStyle();
+        $numIdentifier = $style?->getNumId();
+
+        if ($numIdentifier !== null) {
+            $baseIdentifier = 'numId:' . $numIdentifier;
+        } elseif ($styleName !== null && $styleName !== '') {
+            $baseIdentifier = 'style:' . $styleName;
+        } elseif ($style instanceof ListItemStyle) {
+            $baseIdentifier = 'legacy:' . $style->getListType();
+        } else {
+            $baseIdentifier = 'fallback:' . $element->getDepth();
+        }
+
+        return implode('|', [
+            $baseIdentifier,
+            'depth:' . $element->getDepth(),
+            'format:' . ($listFormat ?? 'bullet'),
+        ]);
     }
 
     public function getPriority(): int

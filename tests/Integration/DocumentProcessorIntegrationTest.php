@@ -11,6 +11,8 @@ use Publicplan\DocumentProcessor\Service\ProsaExpressionLinter;
 use PHPUnit\Framework\TestCase;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
+use PhpOffice\PhpWord\SimpleType\Jc;
+use PhpOffice\PhpWord\SimpleType\NumberFormat;
 
 /**
  * Integrationstests für den DocumentProcessor mit echten DOCX-Dateien.
@@ -281,6 +283,45 @@ class DocumentProcessorIntegrationTest extends TestCase
 
         // Normaler Text sollte außerhalb der Liste sein
         $this->assertStringContainsString('Normaler Text nach der Liste', $html);
+    }
+
+    /**
+     * Test: Alphabetische Listen werden über getrennte <ol>-Blöcke hinweg korrekt fortgesetzt.
+     */
+    public function testAlphabeticOrderedListContinuesAcrossIntermediateParagraph(): void
+    {
+        $phpWord = new PhpWord();
+        $phpWord->addNumberingStyle('UpperAlphaList', [
+            'type' => 'singleLevel',
+            'levels' => [[
+                'start' => 1,
+                'format' => NumberFormat::UPPER_LETTER,
+                'text' => '%1.',
+                'alignment' => Jc::LEFT,
+                'left' => 720,
+                'hanging' => 360,
+                'tabPos' => 720,
+            ]],
+        ]);
+
+        $section = $phpWord->addSection();
+        $section->addListItem('Erster Punkt', 0, null, 'UpperAlphaList');
+        $section->addText('Zwischentext');
+        $section->addListItem('Zweiter Punkt', 0, null, 'UpperAlphaList');
+
+        $filepath = $this->tempDir . '/alpha_list_with_text.docx';
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($filepath);
+
+        $result = $this->processor->process($filepath, 'alpha_list_with_text.docx');
+        $html = $result->html;
+
+        $this->assertSame(2, substr_count($html, '<ol'));
+        $this->assertSame(1, substr_count($html, 'type="A" start="2"'));
+        $this->assertMatchesRegularExpression(
+            '/<ol[^>]*type="A"[^>]*>\s*<li>Erster Punkt<\/li>\s*<\/ol>\s*<p[^>]*>Zwischentext<\/p>\s*<ol[^>]*type="A"[^>]*start="2"[^>]*>\s*<li>Zweiter Punkt<\/li>/s',
+            $html
+        );
     }
 
     /**
