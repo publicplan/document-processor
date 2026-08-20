@@ -112,9 +112,16 @@ class DocumentProcessor
 
                 // Spezialbehandlung für TextBreak (könnte leerer Absatz sein)
                 if ($element instanceof DocBreak) {
+                    $wasInsideList = $openListConfig !== null;
+                    $this->closeOpenList($openListConfig, $text);
+
                     // Am Anfang des Dokuments -> <br>
                     if ($lastTextRun === null) {
-                        $text .= '<br>' . PHP_EOL;
+                        if ($wasInsideList) {
+                            $text .= '<p style="margin-bottom: 0cm;">&#32;</p>' . PHP_EOL;
+                        } else {
+                            $text .= '<br>' . PHP_EOL;
+                        }
                         continue;
                     }
 
@@ -174,10 +181,7 @@ class DocumentProcessor
                     $text           .= $html['content'];
                 } else {
                     // Nicht-Listen-Element: Schließe offene Liste, falls vorhanden
-                    if ($openListConfig !== null) {
-                        $text           .= $openListConfig->renderEndTag() . PHP_EOL;
-                        $openListConfig = null;
-                    }
+                    $this->closeOpenList($openListConfig, $text);
 
                     // Border-Gruppen-Handling für TextRun-Elemente
                     if ($element instanceof DocTextRun) {
@@ -437,6 +441,19 @@ class DocumentProcessor
         $html .= $listConverter->convertWithSpacing($element, $context, $bottomSpacingCm);
 
         return ['listConfig' => $listConfig, 'content' => $html];
+    }
+
+    /**
+     * Schließt eine offene Liste, falls vorhanden.
+     */
+    private function closeOpenList(?ListConfig &$openListConfig, string &$text): void
+    {
+        if ($openListConfig === null) {
+            return;
+        }
+
+        $text .= $openListConfig->renderEndTag() . PHP_EOL;
+        $openListConfig = null;
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Tests\Service;
 
+use PhpOffice\PhpWord\Element\TextRun;
+use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Style\Paragraph;
 use PHPUnit\Framework\TestCase;
@@ -201,6 +203,43 @@ class DocumentProcessorTextBreakTest extends TestCase
         $this->assertStringNotContainsString('<br>', $result);
     }
 
+    /**
+     * Test: Ein leerer Absatz innerhalb einer Liste wird außerhalb der Liste gerendert.
+     */
+    public function testEmptyTextRunInsideListIsRenderedOutsideList(): void
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $section->addListItem('Listenpunkt', 0, null, 'Numbering');
+
+        $filepath = sys_get_temp_dir() . '/document-processor-list-' . uniqid() . '.docx';
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($filepath);
+
+        try {
+            $loadedDoc = IOFactory::load($filepath);
+            $loadedSection = $loadedDoc->getSections()[0];
+
+            $emptyTextRun = new TextRun();
+            $this->insertSectionElement($loadedSection, 1, $emptyTextRun);
+
+            $result = $this->invokeConvertToHtml($loadedDoc);
+
+            $listTag = str_contains($result, '<ol') ? 'ol' : 'ul';
+            $this->assertStringContainsString('<' . $listTag, $result);
+            $this->assertStringContainsString('</' . $listTag . '>', $result);
+            $this->assertStringContainsString('<p style="margin-bottom: 0cm;">&#32;</p>', $result);
+
+            $listStart = strpos($result, '<' . $listTag);
+            $listEnd = strpos($result, '</' . $listTag . '>');
+            $listSegment = substr($result, $listStart, $listEnd - $listStart + strlen('</' . $listTag . '>'));
+
+            $this->assertStringNotContainsString('<p style="margin-bottom: 0cm;">&#32;</p>', $listSegment);
+        } finally {
+            @unlink($filepath);
+        }
+    }
+
     private function invokeConvertToHtml(PhpWord $phpWord): string
     {
         $reflection = new \ReflectionClass($this->processor);
@@ -208,5 +247,16 @@ class DocumentProcessorTextBreakTest extends TestCase
         $method->setAccessible(true);
         $context = new ConversionContext();
         return $method->invoke($this->processor, $phpWord, $context);
+    }
+
+    private function insertSectionElement(object $section, int $position, object $element): void
+    {
+        $reflection = new \ReflectionClass($section);
+        $property = $reflection->getProperty('elements');
+        $property->setAccessible(true);
+
+        $elements = $property->getValue($section);
+        array_splice($elements, $position, 0, [$element]);
+        $property->setValue($section, $elements);
     }
 }
