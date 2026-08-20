@@ -19,8 +19,10 @@ use Publicplan\DocumentProcessor\Exception\DocumentProcessorException;
 use Publicplan\DocumentProcessor\Model\ConversionContext;
 use Publicplan\DocumentProcessor\Model\ListConfig;
 use Publicplan\DocumentProcessor\Model\ParserError;
+use Publicplan\DocumentProcessor\Model\ProcessingOptions;
 use Publicplan\DocumentProcessor\Model\ProcessedDocument;
 use Publicplan\DocumentProcessor\Service\Converter\BorderStyleHelper;
+use Publicplan\DocumentProcessor\Service\Converter\DeletedContentHelper;
 use Publicplan\DocumentProcessor\Service\Converter\ElementConverterRegistry;
 use Publicplan\DocumentProcessor\Service\Converter\ListElementConverter;
 
@@ -45,21 +47,28 @@ class DocumentProcessor
      *
      * @param string $filePath       Absoluter Pfad zur .docx Datei
      * @param string $sourceFilename Ursprünglicher Dateiname für Referenz
+     * @param ProcessingOptions|null $processingOptions Optionen für die HTML-Verarbeitung
      *
      * @return ProcessedDocument Das verarbeitete Dokument
      * @throws DocumentProcessorException Wenn ein unerwarteter Fehler auftritt
      */
-    public function process(string $filePath, string $sourceFilename = ''): ProcessedDocument
+    public function process(
+        string $filePath,
+        string $sourceFilename = '',
+        ?ProcessingOptions $processingOptions = null
+    ): ProcessedDocument
     {
         try {
+            $processingOptions ??= new ProcessingOptions();
             $hasChanges      = false;
             $defaultFontSize = null;
             $result          = $this->documentLoader->loadWithDocumentMetadata($filePath, $hasChanges, $defaultFontSize);
             $context         = new ConversionContext();
             $context->setDefaultFontSize($defaultFontSize);
+            $context->setRemoveDeletedContent($processingOptions->removeDeletedContent);
 
             $html = $this->convertToHtml($result, $context);
-            $html = $this->postProcessHtml($html);
+            $html = $this->postProcessHtml($html, $processingOptions->removeDeletedContent);
 
             if ($hasChanges) {
                 $context->addMessage(
@@ -564,18 +573,20 @@ class DocumentProcessor
     /**
      * Post-Processing des HTML.
      */
-    private function postProcessHtml(string $html): string
+    private function postProcessHtml(string $html, bool $removeDeletedContent): string
     {
-        // Entferne ##deleted## Marker mit Umgebung
-        $html = preg_replace(
-            sprintf(
-                '/(<p.*>)?(##deleted##)+(%s|%s)?(<br\h?\/>)?(<\/p>)?\v?/',
-                preg_quote(ControlCharacter::BREAK->value, '/'),
-                preg_quote(ControlCharacter::PARAGRAPH->value, '/')
-            ),
-            '',
-            $html
-        );
+        if ($removeDeletedContent) {
+            $html = preg_replace(
+                sprintf(
+                    '/(<p.*>)?(%s)+(%s|%s)?(<br\h?\/>)?(<\/p>)?\v?/',
+                    preg_quote(DeletedContentHelper::DELETED_MARKER, '/'),
+                    preg_quote(ControlCharacter::BREAK->value, '/'),
+                    preg_quote(ControlCharacter::PARAGRAPH->value, '/')
+                ),
+                '',
+                $html
+            );
+        }
 
         // Füge Zeilenumbruch nach </p> ein
         return str_replace('</p>', '</p>' . PHP_EOL, $html);

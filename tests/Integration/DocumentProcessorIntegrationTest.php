@@ -8,6 +8,7 @@ use Publicplan\DocumentProcessor\Service\DocumentProcessor;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
 use Publicplan\DocumentProcessor\Service\TwigTranspilerService;
 use Publicplan\DocumentProcessor\Service\ProsaExpressionLinter;
+use Publicplan\DocumentProcessor\Model\ProcessingOptions;
 use PHPUnit\Framework\TestCase;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
@@ -174,6 +175,25 @@ class DocumentProcessorIntegrationTest extends TestCase
         $filepath = $this->tempDir . '/' . $filename;
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $writer->save($filepath);
+
+        return $filepath;
+    }
+
+    /**
+     * Hilfsmethode: Erstellt eine DOCX mit gelöschten Inhalten.
+     */
+    private function createDeletedContentDocx(string $filename): string
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+
+        $section->addText('Sichtbar');
+        $section->addText('Gelöschter Text', ['strikethrough' => true, 'bold' => true]);
+        $section->addLink('https://example.com/deleted', 'Gelöschter Link', ['strikethrough' => true]);
+        $section->addListItem('Gelöschter Listenpunkt', 0, ['strikethrough' => true]);
+
+        $filepath = $this->tempDir . '/' . $filename;
+        IOFactory::createWriter($phpWord, 'Word2007')->save($filepath);
 
         return $filepath;
     }
@@ -463,6 +483,44 @@ class DocumentProcessorIntegrationTest extends TestCase
         // Prüfe Link-Struktur
         $this->assertStringContainsString('<a href=', $html);
         $this->assertStringContainsString('https://example.com', $html);
+    }
+
+    /**
+     * Test: Gelöschte Inhalte werden standardmäßig entfernt.
+     */
+    public function testDeletedContentIsRemovedByDefault(): void
+    {
+        $filepath = $this->createDeletedContentDocx('deleted-default.docx');
+
+        $result = $this->processor->process($filepath, 'deleted-default.docx');
+        $html = $result->html;
+
+        $this->assertStringContainsString('Sichtbar', $html);
+        $this->assertStringNotContainsString('Gelöschter Text', $html);
+        $this->assertStringNotContainsString('Gelöschter Link', $html);
+        $this->assertStringNotContainsString('Gelöschter Listenpunkt', $html);
+        $this->assertStringNotContainsString('##deleted##', $html);
+    }
+
+    /**
+     * Test: Gelöschte Inhalte bleiben mit deaktiviertem Entfernen sichtbar.
+     */
+    public function testDeletedContentCanBeKeptVisible(): void
+    {
+        $filepath = $this->createDeletedContentDocx('deleted-kept.docx');
+
+        $result = $this->processor->process(
+            $filepath,
+            'deleted-kept.docx',
+            new ProcessingOptions(removeDeletedContent: false)
+        );
+        $html = $result->html;
+
+        $this->assertStringContainsString('Sichtbar', $html);
+        $this->assertStringContainsString('<del><strong>Gelöschter Text</strong></del>', $html);
+        $this->assertStringContainsString('<del><a href="https://example.com/deleted">Gelöschter Link</a></del>', $html);
+        $this->assertStringContainsString('<del>Gelöschter Listenpunkt</del>', $html);
+        $this->assertStringNotContainsString('##deleted##', $html);
     }
 
     /**

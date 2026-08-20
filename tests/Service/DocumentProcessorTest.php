@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Tests\Service;
 
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
+use Publicplan\DocumentProcessor\Model\ProcessingOptions;
 use Publicplan\DocumentProcessor\Model\ProcessedDocument;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
 use Publicplan\DocumentProcessor\Service\DocumentProcessor;
@@ -166,5 +167,55 @@ class DocumentProcessorTest extends TestCase
         $this->assertCount(2, $allMessages);
         $this->assertContains($error, $allMessages);
         $this->assertContains($warning, $allMessages);
+    }
+
+    /**
+     * Test: Gelöschte Inhalte werden standardmäßig entfernt.
+     */
+    public function testProcessRemovesDeletedContentByDefault(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $section = $phpWord->addSection();
+        $section->addText('Sichtbar');
+        $section->addText('Gelöscht', ['strikethrough' => true]);
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new DocumentProcessor($loader);
+
+        $result = $processor->process('/test/file.docx', 'test.docx');
+
+        $this->assertStringContainsString('Sichtbar', $result->html);
+        $this->assertStringNotContainsString('Gelöscht', $result->html);
+        $this->assertStringNotContainsString('##deleted##', $result->html);
+    }
+
+    /**
+     * Test: Gelöschte Inhalte bleiben optional als HTML sichtbar.
+     */
+    public function testProcessKeepsDeletedContentWhenRemovalIsDisabled(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $section = $phpWord->addSection();
+        $section->addText('Gelöscht', ['strikethrough' => true]);
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new DocumentProcessor($loader);
+
+        $result = $processor->process(
+            '/test/file.docx',
+            'test.docx',
+            new ProcessingOptions(removeDeletedContent: false)
+        );
+
+        $this->assertStringContainsString('<del>Gelöscht</del>', $result->html);
+        $this->assertStringNotContainsString('##deleted##', $result->html);
     }
 }

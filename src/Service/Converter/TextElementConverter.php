@@ -28,18 +28,22 @@ class TextElementConverter implements ElementConverterInterface
         $text      = $element->getText() ?? '';
         $fontStyle = $element->getFontStyle();
 
-        // Gelöschter Text (Strikethrough) wird als Marker zurückgegeben
-        if ($text === '' || ($fontStyle instanceof Font && $fontStyle->isStrikethrough())) {
-            return '##deleted##';
+        if ($text === '') {
+            return '';
         }
-
-        $tags = $this->extractFormatTags($element);
 
         // Nicht-umbrechende Leerzeichen (Unicode U+00A0) korrigieren
         // Word verwendet echte non-breaking spaces, die als ° angezeigt werden sollen
         $text = str_replace("\xC2\xA0", '&nbsp;', $text);
 
-        return $this->wrapWithTags($text, $tags);
+        $tags          = $this->extractFormatTags($element);
+        $formattedText = $this->wrapWithTags($text, $tags);
+
+        if ($fontStyle instanceof Font && $fontStyle->isStrikethrough()) {
+            return DeletedContentHelper::renderDeletedHtml($formattedText, $context);
+        }
+
+        return $formattedText;
     }
 
     /**

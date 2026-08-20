@@ -18,6 +18,8 @@ class ConversionContext
 
     private ?float $defaultFontSize = null;
 
+    private bool $removeDeletedContent = true;
+
     public function __construct(
         private readonly bool $trackDistinctMessages = true
     )
@@ -111,5 +113,15 @@ class ConversionContext
     public function getDefaultFontSize(): ?float
     {
         return $this->defaultFontSize;
+    }
+
+    public function setRemoveDeletedContent(bool $removeDeletedContent): void
+    {
+        $this->removeDeletedContent = $removeDeletedContent;
+    }
+
+    public function shouldRemoveDeletedContent(): bool
+    {
+        return $this->removeDeletedContent;
     }
 }

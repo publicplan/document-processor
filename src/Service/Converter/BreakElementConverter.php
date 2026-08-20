@@ -23,7 +23,7 @@ class BreakElementConverter implements ElementConverterInterface
         /** @var DocBreak $element */
         // Gelöschte Breaks ignorieren
         if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
-            return '';
+            return DeletedContentHelper::renderDeletedBreak($context);
         }
 
         return '<br>' . PHP_EOL;

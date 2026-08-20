@@ -122,7 +122,7 @@ class TableElementConverter implements ElementConverterInterface
     private function convertCellElement(object $cellElement, ConversionContext $context): string
     {
         if ($cellElement instanceof DocBreak) {
-            return '            ' . $this->convertBreakElement($cellElement);
+            return '            ' . $this->convertBreakElement($cellElement, $context);
         }
 
         if ($cellElement instanceof DocTextRun) {
@@ -428,10 +428,10 @@ class TableElementConverter implements ElementConverterInterface
     /**
      * Konvertiert einen Break in HTML.
      */
-    private function convertBreakElement(DocBreak $element): string
+    private function convertBreakElement(DocBreak $element, ConversionContext $context): string
     {
         if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
-            return '';
+            return DeletedContentHelper::renderDeletedBreak($context);
         }
 
         return '<br>' . PHP_EOL;

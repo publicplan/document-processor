@@ -22,17 +22,18 @@ class LinkElementConverter implements ElementConverterInterface
     {
         /** @var DocLink $element */
 
-        // Gelöschte Links ignorieren
-        if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
-            return '##deleted##';
-        }
-
         /** @noinspection HtmlUnknownTarget */
-        return sprintf(
+        $linkHtml = sprintf(
             '<a href="%s">%s</a>',
             htmlspecialchars($element->getSource(), ENT_QUOTES, 'UTF-8'),
             htmlspecialchars($element->getText(), ENT_QUOTES, 'UTF-8')
         );
+
+        if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
+            return DeletedContentHelper::renderDeletedHtml($linkHtml, $context);
+        }
+
+        return $linkHtml;
     }
 
     public function getPriority(): int

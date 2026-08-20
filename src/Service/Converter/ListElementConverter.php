@@ -92,7 +92,7 @@ class ListElementConverter implements ElementConverterInterface
     private function convertSubElement(object $textElement, ConversionContext $context): ?string
     {
         if ($textElement instanceof DocBreak) {
-            return $this->convertBreakElement($textElement);
+            return $this->convertBreakElement($textElement, $context);
         }
 
         if ($textElement instanceof DocText) {
@@ -109,10 +109,10 @@ class ListElementConverter implements ElementConverterInterface
     /**
      * Konvertiert einen Break in HTML.
      */
-    private function convertBreakElement(DocBreak $element): string
+    private function convertBreakElement(DocBreak $element, ConversionContext $context): string
     {
         if ($element->getFontStyle() instanceof Font && $element->getFontStyle()->isStrikethrough()) {
-            return '';
+            return DeletedContentHelper::renderDeletedBreak($context);
         }
 
         return '<br>' . PHP_EOL;
@@ -123,13 +123,6 @@ class ListElementConverter implements ElementConverterInterface
      */
     private function convertTextElement(DocText $element, ConversionContext $context): string
     {
-        $text      = $element->getText() ?? '';
-        $fontStyle = $element->getFontStyle();
-
-        if ($text === '' || ($fontStyle instanceof Font && $fontStyle->isStrikethrough())) {
-            return '##deleted##';
-        }
-
         return new TextElementConverter()->convert($element, $context);
     }
 

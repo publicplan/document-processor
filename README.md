@@ -24,6 +24,7 @@ composer require publicplan/document-processor
 ```php
 use Publicplan\DocumentProcessor\Service\DocumentProcessor;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
+use Publicplan\DocumentProcessor\Model\ProcessingOptions;
 
 // Initialize
 $loader = new DocumentLoader();
@@ -36,6 +37,13 @@ $result = $processor->process('/path/to/file.docx', 'filename.docx');
 $html = $result->html;
 $hasChanges = $result->hasUnacceptedChanges;
 $messages = $result->getAllMessages();
+
+// Optional: keep deleted/strikethrough content visible in the HTML output
+$resultWithDeletedContent = $processor->process(
+    '/path/to/file.docx',
+    'filename.docx',
+    new ProcessingOptions(removeDeletedContent: false)
+);
 ```
 
 ## Framework Integration
