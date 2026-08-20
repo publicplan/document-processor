@@ -149,6 +149,22 @@ class TextRunElementConverterTest extends TestCase
     }
 
     /**
+     * Test: Rechtsbündige Ausrichtung wird in CSS übernommen.
+     */
+    public function testRightAlignmentIsMappedToCss(): void
+    {
+        $paragraphStyle = new Paragraph();
+        $paragraphStyle->setAlignment('right');
+
+        $textRun = new TextRun($paragraphStyle);
+        $textRun->addText('Rechtsbündig');
+
+        $result = $this->converter->convert($textRun, $this->context);
+
+        $this->assertStringContainsString('text-align: right;', $result);
+    }
+
+    /**
      * Test: Word Style "double" wird zu CSS "double".
      */
     public function testDoubleBorderStyleMapping(): void

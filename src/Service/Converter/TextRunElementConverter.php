@@ -212,11 +212,9 @@ class TextRunElementConverter implements ElementConverterInterface
         }
 
         // Ausrichtung
-        if ($pStyle->getAlignment() === Jc::CENTER) {
-            $blockStyles[] = 'text-align: center;';
-        }
-        if ($pStyle->getAlignment() === Jc::BOTH) {
-            $blockStyles[] = 'text-align: justify;';
+        $textAlign = $this->mapParagraphAlignmentToCss($pStyle->getAlignment());
+        if ($textAlign !== null) {
+            $blockStyles[] = sprintf('text-align: %s;', $textAlign);
         }
 
         // Paragraph-Abstand
@@ -249,6 +247,26 @@ class TextRunElementConverter implements ElementConverterInterface
 
         // Entferne überflüssige aufeinanderfolgende Tags
         return $this->cleanupConsecutiveTags($result);
+    }
+
+    /**
+     * Mappt Word-Paragraph-Ausrichtung auf CSS text-align.
+     */
+    private function mapParagraphAlignmentToCss(?string $alignment): ?string
+    {
+        if ($alignment === Jc::CENTER) {
+            return 'center';
+        }
+
+        if ($alignment === Jc::BOTH) {
+            return 'justify';
+        }
+
+        if ($alignment === 'right' || $alignment === 'end') {
+            return 'right';
+        }
+
+        return null;
     }
 
     /**

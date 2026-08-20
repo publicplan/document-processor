@@ -301,6 +301,30 @@ class DocumentProcessorIntegrationTest extends TestCase
     }
 
     /**
+     * Test: Rechtsbündige Tabellenausrichtung wird ins HTML übernommen.
+     */
+    public function testProcessTableDocumentWithRightAlignedCell(): void
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $table = $section->addTable();
+
+        $table->addRow();
+        $table->addCell(2000)->addText('Links');
+        $table->addCell(2000)->addText('Rechts', [], ['alignment' => 'right']);
+
+        $filepath = $this->tempDir . '/table-right-aligned.docx';
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($filepath);
+
+        $result = $this->processor->process($filepath, 'table-right-aligned.docx');
+        $html = $result->html;
+
+        $this->assertStringContainsString('<table', $html);
+        $this->assertStringContainsString('text-align: right;', $html);
+    }
+
+    /**
      * Test: Verarbeitung einer DOCX mit Links.
      */
     public function testProcessLinkDocument(): void
