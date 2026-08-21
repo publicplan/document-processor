@@ -280,6 +280,32 @@ class DocumentProcessorIntegrationTest extends TestCase
     }
 
     /**
+     * Test: Getrennte Listenblöcke behalten dieselbe DOCX-Listen-ID im HTML.
+     */
+    public function testSplitListsKeepDocxListId(): void
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+
+        $section->addListItem('Punkt 1', 0);
+        $section->addText('Zwischentext');
+        $section->addListItem('Punkt 2', 0);
+
+        $filepath = $this->tempDir . '/split_list_id.docx';
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($filepath);
+
+        $result = $this->processor->process($filepath, 'split_list_id.docx');
+        $html = $result->html;
+
+        $this->assertSame(2, substr_count($html, '<ul'));
+        $this->assertMatchesRegularExpression(
+            '/<ul[^>]*data-docx-list-id="([^"]+)"[^>]*>\s*<li>Punkt 1<\/li>\s*<\/ul>\s*<p[^>]*>Zwischentext<\/p>\s*<ul[^>]*data-docx-list-id="\1"[^>]*>\s*<li>Punkt 2<\/li>/s',
+            $html
+        );
+    }
+
+    /**
      * Test: Liste wird korrekt geschlossen wenn normaler Text folgt.
      */
     public function testListIsClosedWhenTextFollows(): void

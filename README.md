@@ -12,6 +12,7 @@ Standalone DOCX to HTML processor for PHP 8.4+ with Strategy Pattern architectur
 - ✅ **Strategy Pattern architecture** - 10 specialized element converters
 - ✅ **Clean Architecture** - SRP, testable, maintainable
 - ✅ **Stateless design** - Thread-safe processing
+- ✅ **List wrapper metadata** - HTML `<ul>/<ol>` tags carry `data-docx-list-id` and `data-docx-list-key`
 - ✅ **Comprehensive testing** - 33 tests, 71 assertions
 
 ## Installation

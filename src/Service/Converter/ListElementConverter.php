@@ -224,6 +224,7 @@ class ListElementConverter implements ElementConverterInterface
     public function createListConfig(DocList $element, float $bottomSpacingCm = 0.0): ListConfig
     {
         $styleName = $element->getStyle()?->getNumStyle();
+        $docxListId = $element->getStyle()?->getNumId();
         /** @var Numbering|null $numStyleObject */
         $numStyleObject = Style::getStyle($styleName);
         $numLevels      = $numStyleObject?->getLevels() ?? [];
@@ -236,12 +237,12 @@ class ListElementConverter implements ElementConverterInterface
         $sequenceKey = $this->buildSequenceKey($element, $styleName, $listFormat);
 
         return match ($listFormat) {
-            ListConfigType::Decimal->value => new ListConfig(tag: 'ol', type: null, bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
-            ListConfigType::UpperRoman->value => new ListConfig(tag: 'ol', type: 'I', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
-            ListConfigType::LowerRoman->value => new ListConfig(tag: 'ol', type: 'i', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
-            ListConfigType::UpperLetter->value => new ListConfig(tag: 'ol', type: 'A', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
-            ListConfigType::LowerLetter->value => new ListConfig(tag: 'ol', type: 'a', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey),
-            default => new ListConfig(tag: 'ul', type: null, bottomSpacingCm: $bottomSpacingCm, sequenceKey: $sequenceKey)
+            ListConfigType::Decimal->value => new ListConfig(tag: 'ol', type: null, bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey, docxListId: $docxListId),
+            ListConfigType::UpperRoman->value => new ListConfig(tag: 'ol', type: 'I', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey, docxListId: $docxListId),
+            ListConfigType::LowerRoman->value => new ListConfig(tag: 'ol', type: 'i', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey, docxListId: $docxListId),
+            ListConfigType::UpperLetter->value => new ListConfig(tag: 'ol', type: 'A', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey, docxListId: $docxListId),
+            ListConfigType::LowerLetter->value => new ListConfig(tag: 'ol', type: 'a', bottomSpacingCm: $bottomSpacingCm, start: $listStart, sequenceKey: $sequenceKey, docxListId: $docxListId),
+            default => new ListConfig(tag: 'ul', type: null, bottomSpacingCm: $bottomSpacingCm, sequenceKey: $sequenceKey, docxListId: $docxListId)
         };
     }
 

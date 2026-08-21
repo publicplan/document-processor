@@ -16,7 +16,8 @@ readonly class ListConfig
         public ?string $type,
         public float   $bottomSpacingCm = 0.0,
         public int     $start = 1,
-        public string  $sequenceKey = ''
+        public string  $sequenceKey = '',
+        public int|string|null $docxListId = null
     )
     {
     }
@@ -38,6 +39,18 @@ readonly class ListConfig
         }
         if ($this->tag === 'ol' && $start > 1) {
             $attributes[] = sprintf('start="%d"', $start);
+        }
+        if ($this->docxListId !== null) {
+            $attributes[] = sprintf(
+                'data-docx-list-id="%s"',
+                htmlspecialchars((string)$this->docxListId, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            );
+        }
+        if ($this->sequenceKey !== '') {
+            $attributes[] = sprintf(
+                'data-docx-list-key="%s"',
+                htmlspecialchars($this->sequenceKey, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
+            );
         }
 
         return sprintf(
