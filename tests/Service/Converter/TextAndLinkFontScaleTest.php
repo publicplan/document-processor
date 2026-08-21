@@ -58,9 +58,9 @@ class TextAndLinkFontScaleTest extends TestCase
     }
 
     /**
-     * TextRun mit Text-Element (Override) wird mit Span-Wrapper und data-font-scale.
+     * TextRun mit genau einer skalierten Font-Gruppe zieht data-font-scale auf den Absatz.
      */
-    public function testTextRunWrapsOverrideSizedTextInSpan(): void
+    public function testTextRunMovesOverrideSizedTextScaleToParagraph(): void
     {
         $context = new ConversionContext();
         $context->setDefaultFontSize(10.0);
@@ -71,8 +71,8 @@ class TextAndLinkFontScaleTest extends TestCase
         $converter = new TextRunElementConverter();
         $result = $converter->convert($textRun, $context);
 
-        // TextRunElementConverter wrappet mit Span und data-font-scale
-        $this->assertStringContainsString('<span data-font-scale="1.2">Hallo</span>', $result);
+        $this->assertStringContainsString('<p style="margin-bottom: 0cm;" data-font-scale="1.2">Hallo</p>', $result);
+        $this->assertStringNotContainsString('<span', $result);
     }
 
     /**
@@ -95,9 +95,9 @@ class TextAndLinkFontScaleTest extends TestCase
     }
 
     /**
-     * TextRun mit Link-Element (Override) wird mit Span-Wrapper und data-font-scale.
+     * TextRun mit genau einer skalierten Link-Gruppe zieht data-font-scale auf den Absatz.
      */
-    public function testTextRunWrapsOverrideSizedLinkInSpan(): void
+    public function testTextRunMovesOverrideSizedLinkScaleToParagraph(): void
     {
         $context = new ConversionContext();
         $context->setDefaultFontSize(10.0);
@@ -108,10 +108,9 @@ class TextAndLinkFontScaleTest extends TestCase
         $converter = new TextRunElementConverter();
         $result = $converter->convert($textRun, $context);
 
-        // TextRunElementConverter wrappet Link mit Span und data-font-scale
-        $this->assertStringContainsString('<span data-font-scale="1.1">', $result);
+        $this->assertStringContainsString('<p style="margin-bottom: 0cm;" data-font-scale="1.1">', $result);
         $this->assertStringContainsString('<a href="https://example.org">Link</a>', $result);
-        $this->assertStringContainsString('</span>', $result);
+        $this->assertStringNotContainsString('<span', $result);
     }
 
     /**
@@ -129,9 +128,8 @@ class TextAndLinkFontScaleTest extends TestCase
         $converter = new TextRunElementConverter();
         $result = $converter->convert($textRun, $context);
 
-        // Beide Texte sind in einem Span zusammengefasst (keine </span><span>-Sequenz)
-        $this->assertStringContainsString('<span data-font-scale="1.2">Erstes Zweites</span>', $result);
-        $this->assertStringNotContainsString('</span><span', $result);
+        $this->assertStringContainsString('<p style="margin-bottom: 0cm;" data-font-scale="1.2">Erstes Zweites</p>', $result);
+        $this->assertStringNotContainsString('<span', $result);
     }
 
     /**
@@ -175,8 +173,8 @@ class TextAndLinkFontScaleTest extends TestCase
         $converter = new TextRunElementConverter();
         $result = $converter->convert($textRun, $context);
 
-        // Text erbt Schriftgröße 14pt von Paragraph-Style
-        $this->assertStringContainsString('data-font-scale="1.4"', $result);
+        $this->assertStringContainsString('<p style="margin-bottom: 0cm;" data-font-scale="1.4">Ueberschrift</p>', $result);
+        $this->assertStringNotContainsString('<span', $result);
     }
 
     /**
@@ -200,9 +198,27 @@ class TextAndLinkFontScaleTest extends TestCase
         $converter = new TextRunElementConverter();
         $result = $converter->convert($textRun, $context);
 
-        // Link erbt Schriftgröße 12pt von Paragraph-Style
-        $this->assertStringContainsString('data-font-scale="1.2"', $result);
+        $this->assertStringContainsString('<p style="margin-bottom: 0cm;" data-font-scale="1.2">', $result);
         $this->assertStringContainsString('<a href="https://example.org">Link</a>', $result);
+        $this->assertStringNotContainsString('<span', $result);
+    }
+
+    /**
+     * Inline-Markup innerhalb einer einzigen skalierten Gruppe bleibt erhalten, ohne äußeren Span.
+     */
+    public function testTextRunKeepsInlineMarkupWhenMovingScaleToParagraph(): void
+    {
+        $context = new ConversionContext();
+        $context->setDefaultFontSize(10.0);
+
+        $textRun = new TextRun();
+        $textRun->addText('Fett', ['size' => 12, 'bold' => true]);
+        $textRun->addText(' normal', ['size' => 12]);
+
+        $converter = new TextRunElementConverter();
+        $result = $converter->convert($textRun, $context);
+
+        $this->assertStringContainsString('<p style="margin-bottom: 0cm;" data-font-scale="1.2"><strong>Fett</strong> normal</p>', $result);
+        $this->assertStringNotContainsString('<span', $result);
     }
 }
-

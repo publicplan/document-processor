@@ -25,21 +25,22 @@ class TextRunElementConverter implements ElementConverterInterface
     public function convert(object $element, ConversionContext $context): string
     {
         /** @var DocTextRun $element */
-        $text = $this->convertSubElements($element, $context);
+        $renderData = $this->convertSubElements($element, $context);
+        $text       = $renderData['html'];
 
         if ($text === '') {
             // Leere Absätze als <p>&#32;</p> mit Styles ausgeben (wie in Word)
             return $this->wrapWithParagraphStyles($element, '&#32;');
         }
 
-        return $this->wrapWithParagraphStyles($element, $text);
+        return $this->wrapWithParagraphStyles($element, $text, $renderData['attributes']);
     }
 
     /**
      * Konvertiert alle Unter-Elemente des TextRuns und gruppiert sie nach Schriftgröße.
      * Aufeinanderfolgende Elemente mit gleicher Schriftgröße werden zusammengefasst.
      */
-    private function convertSubElements(DocTextRun $element, ConversionContext $context): string
+    private function convertSubElements(DocTextRun $element, ConversionContext $context): array
     {
         $elementConverter = new ElementConverterRegistry();
         $elementConverter->registerDefaultConverters();
@@ -62,11 +63,18 @@ class TextRunElementConverter implements ElementConverterInterface
         }
 
         if (empty($annotatedElements)) {
-            return '';
+            return [
+                'html'       => '',
+                'attributes' => [],
+            ];
         }
 
         // Phase 2: Gruppiere aufeinanderfolgende Elemente mit gleicher Schriftgröße
         $groups = $this->groupElementsByFontSize($annotatedElements);
+
+        if (count($groups) === 1) {
+            return $this->renderSingleGroupForParagraph($groups[0], $context->getDefaultFontSize());
+        }
 
         // Phase 3: Rendere Gruppen, wrappen nur wenn Schriftgröße vom Default abweicht
         $text = '';
@@ -74,7 +82,10 @@ class TextRunElementConverter implements ElementConverterInterface
             $text .= $this->renderFontGroup($group, $context->getDefaultFontSize());
         }
 
-        return $text;
+        return [
+            'html'       => $text,
+            'attributes' => [],
+        ];
     }
 
     /**
@@ -163,6 +174,21 @@ class TextRunElementConverter implements ElementConverterInterface
     }
 
     /**
+     * Rendert eine einzelne Font-Gruppe direkt für einen Absatz.
+     * Wenn die Gruppe skaliert ist, wird das Attribut auf <p> gezogen statt einen äußeren Span zu erzeugen.
+     */
+    private function renderSingleGroupForParagraph(array $group, ?float $defaultFontSize): array
+    {
+        $html      = implode('', $group['htmlParts']);
+        $scaleAttr = FontScaleHelper::createScaleAttribute($group['fontSize'], $defaultFontSize);
+
+        return [
+            'html'       => $html,
+            'attributes' => $scaleAttr !== null ? [$scaleAttr] : [],
+        ];
+    }
+
+    /**
      * Behandelt ungültige/unbekannte Elemente.
      */
     private function handleInvalidElement(
@@ -199,7 +225,7 @@ class TextRunElementConverter implements ElementConverterInterface
     /**
      * Wendet Paragraph-Styles an und wrappend in &lt;p&gt;.
      */
-    private function wrapWithParagraphStyles(DocTextRun $element, string $text): string
+    private function wrapWithParagraphStyles(DocTextRun $element, string $text, array $additionalAttributes = []): string
     {
         $blockClasses = [];
         $blockStyles  = [];
@@ -238,9 +264,10 @@ class TextRunElementConverter implements ElementConverterInterface
         }
 
         $result = sprintf(
-            '<p%s%s>%s</p>%s',
+            '<p%s%s%s>%s</p>%s',
             !empty($blockClasses) ? sprintf(' class="%s"', implode(' ', $blockClasses)) : '',
             !empty($blockStyles) ? sprintf(' style="%s"', implode(' ', $blockStyles)) : '',
+            !empty($additionalAttributes) ? ' ' . implode(' ', $additionalAttributes) : '',
             trim($text),
             PHP_EOL
         );
