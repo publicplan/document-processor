@@ -46,6 +46,23 @@ class ListElementConverter implements ElementConverterInterface
     }
 
     /**
+     * Konvertiert ein Listen-Element mit zusätzlichem Spacer-Spacing.
+     *
+     * Der additionalSpacerSpacingCm wird zum bottomSpacingCm des Listenpunktes addiert.
+     * Dies wird verwendet, um Abstände von nachfolgenden leeren Absätzen auf den <li> zu übertragen.
+     */
+    public function convertWithSpacerSpacing(
+        DocList $element,
+        ConversionContext $context,
+        float $bottomSpacingCm,
+        float $additionalSpacerSpacingCm = 0.0
+    ): string
+    {
+        $totalSpacingCm = $bottomSpacingCm + $additionalSpacerSpacingCm;
+        return $this->doConvert($element, $context, $totalSpacingCm);
+    }
+
+    /**
      * Interne Konvertierungslogik für Listen-Elemente.
      */
     private function doConvert(DocList $element, ConversionContext $context, float $bottomSpacingCm): string

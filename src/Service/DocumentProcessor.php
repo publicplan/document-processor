@@ -35,6 +35,7 @@ use Publicplan\DocumentProcessor\Service\Converter\ListElementConverter;
 class DocumentProcessor
 {
     private ElementConverterRegistry $converterRegistry;
+    private int|string|null $lastListNumId = null;
 
     public function __construct(
         private readonly DocumentLoader $documentLoader
@@ -125,8 +126,9 @@ class DocumentProcessor
         foreach ($doc->getSections() as $section) {
             $elements = $section->getElements();
 
-            foreach ($elements as $i => $iValue) {
-                $element = $iValue;
+            // Nutze for-Schleife statt foreach, damit wir den Index manuell erhöhen können (für Spacer-Skipping)
+            for ($i = 0; $i < count($elements); $i++) {
+                $element = $elements[$i];
 
                 // Spezialbehandlung für TextBreak (könnte leerer Absatz sein)
                 if ($element instanceof DocBreak) {
@@ -194,7 +196,7 @@ class DocumentProcessor
                         $openBorderStyle     = '';
                     }
 
-                    $html           = $this->handleListElement($element, $context, $openListConfig, $text, $listContinuationMap);
+                    $html           = $this->handleListElement($element, $context, $openListConfig, $text, $listContinuationMap, $elements, $i);
                     $openListConfig = $html['listConfig'];
                     $text           .= $html['content'];
                 } else {
@@ -203,6 +205,12 @@ class DocumentProcessor
 
                     // Border-Gruppen-Handling für TextRun-Elemente
                     if ($element instanceof DocTextRun) {
+                        // Prüfe ob dies ein Spacer-Absatz ist (leerer Absatz zwischen Listenpunkten gleicher numId)
+                        if ($element->isEmpty() && $this->isSpacerParagraph($element, $elements, $i)) {
+                            // Spacer wird übersprungen - sein Spacing wurde bereits auf den vorherigen <li> übertragen
+                            continue;
+                        }
+
                         $borderSignature = $this->getBorderSignature($element);
 
                         if ($borderSignature !== null) {
@@ -429,7 +437,9 @@ class DocumentProcessor
         ConversionContext $context,
         ?ListConfig       $openListConfig,
         string            &$accumulatedText,
-        array             &$listContinuationMap
+        array             &$listContinuationMap,
+        array             $elements,
+        int               &$currentIndex
     ): array
     {
         $listConverter = $this->converterRegistry->findConverter($element);
@@ -438,9 +448,19 @@ class DocumentProcessor
             return ['listConfig' => $openListConfig, 'content' => ''];
         }
 
+        // Speichere die numId dieses Listenpunktes für Spacer-Tracking
+        $this->setLastListNumId($element->getStyle()?->getNumId());
+
         // Bottom spacing aus dem aktuellen Listenelement holen (in cm)
         $spaceAfter      = $element->getParagraphStyle()?->getSpaceAfter();
         $bottomSpacingCm = $spaceAfter ? $this->twipsToCm($spaceAfter) : 0.0;
+
+        // Sammle Spacing von nachfolgenden Spacer-Absätzen
+        $nextIndex = $currentIndex + 1;
+        $spacerSpacingCm = $this->accumulateSpacingCm($elements, $nextIndex);
+
+        // Erhöhe den Index, damit die Spacer übersprungen werden
+        $currentIndex = $nextIndex - 1;
 
         $listConfig = $listConverter->createListConfig($element); // Liste selbst hat keinen bottom spacing
         $html       = '';
@@ -457,8 +477,8 @@ class DocumentProcessor
         }
         // Sonst: Liste ist bereits offen, füge nur <li> hinzu
 
-        // Listen-Item mit bottom spacing hinzufügen
-        $html .= $listConverter->convertWithSpacing($element, $context, $bottomSpacingCm);
+        // Listen-Item mit bottom spacing + Spacer-Spacing hinzufügen
+        $html .= $listConverter->convertWithSpacerSpacing($element, $context, $bottomSpacingCm, $spacerSpacingCm);
         $this->advanceListContinuation($listConfig, $listContinuationMap);
 
         return ['listConfig' => $listConfig, 'content' => $html];
@@ -683,5 +703,112 @@ class DocumentProcessor
     public function hasUnacceptedChanges(string $filePath): bool
     {
         return $this->documentLoader->hasUnacceptedChanges($filePath);
+    }
+
+    /**
+     * Setzt die Nummerierungs-ID des letzten Listenpunktes (für Spacer-Tracking).
+     */
+    private function setLastListNumId(int|string|null $numId): void
+    {
+        $this->lastListNumId = $numId;
+    }
+
+    /**
+     * Gibt die Nummerierungs-ID des letzten Listenpunktes zurück.
+     */
+    private function getLastListNumId(): int|string|null
+    {
+        return $this->lastListNumId;
+    }
+
+    /**
+     * Prüft, ob ein leerer Absatz (TextBreak/DocBreak) ein Spacer-Absatz zwischen Listenpunkten ist.
+     *
+     * Ein Spacer ist ein leerer Absatz (DocBreak), der unmittelbar vor einem Listenpunkt mit
+     * der gleichen numId wie der letzte Listenpunkt folgt (und damit nur für Abstände genutzt wird).
+     *
+     * @param object $element Das zu prüfende Element
+     * @param array $elements Alle Elemente des Dokuments
+     * @param int $currentIndex Index von $element in $elements
+     *
+     * @return bool True, wenn $element ein Spacer ist
+     */
+    private function isSpacerParagraph(object $element, array $elements, int $currentIndex): bool
+    {
+        // Element muss ein DocBreak sein (leerer Absatz)
+        if (!$element instanceof DocBreak) {
+            return false;
+        }
+
+        // Nächstes Element muss existieren und ein Listenpunkt sein
+        $nextElement = $elements[$currentIndex + 1] ?? null;
+        if (!$nextElement instanceof DocList) {
+            return false;
+        }
+
+        // Der Listenpunkt muss die gleiche numId wie der letzte Listenpunkt haben
+        $lastNumId = $this->getLastListNumId();
+        $nextNumId = $nextElement->getStyle()?->getNumId();
+
+        return $lastNumId !== null && $lastNumId === $nextNumId;
+    }
+
+    /**
+     * Berechnet die Höhe eines Spacer-Absatzes (DocBreak) in cm.
+     *
+     * Nutzt zuerst explizites Spacing (spaceAfter), sonst Fallback von 0.42cm (1 Zeile).
+     *
+     * @param object $element Der Spacer-Absatz (DocBreak)
+     *
+     * @return float Höhe in cm (gerundet auf 2 Dezimalstellen)
+     */
+    private function calculateSpacerHeightCm(object $element): float
+    {
+        // Versuche explizites Spacing aus dem Absatz zu lesen
+        if (method_exists($element, 'getParagraphStyle')) {
+            $pStyle = $element->getParagraphStyle();
+            $spaceAfter = $pStyle?->getSpaceAfter();
+
+            if ($spaceAfter) {
+                return $this->twipsToCm($spaceAfter);
+            }
+        }
+
+        // Fallback: 1 Zeile ≈ 0.42cm (Standard-Zeilenhöhe in Word)
+        return 0.42;
+    }
+
+    /**
+     * Sammelt das Spacing von aufeinanderfolgenden Spacer-Absätzen.
+     *
+     * Prüft ab dem aktuellen Index alle folgenden Elemente. Wenn sie Spacer sind,
+     * werden sie gezählt und ihr Spacing addiert. Der $currentIndex wird erhöht.
+     *
+     * @param array $elements Alle Elemente des Dokuments
+     * @param int $currentIndex [OUT] Index wird auf das erste Nicht-Spacer-Element gesetzt
+     *
+     * @return float Kumuliertes Spacing aller Spacer in cm
+     */
+    private function accumulateSpacingCm(array $elements, int &$currentIndex): float
+    {
+        $totalSpacing = 0.0;
+        $index = $currentIndex;
+
+        while ($index < count($elements)) {
+            $element = $elements[$index];
+
+            // Prüfe ob Spacer (DocBreak zwischen Listenpunkten gleicher numId)
+            if ($this->isSpacerParagraph($element, $elements, $index)) {
+                $totalSpacing += $this->calculateSpacerHeightCm($element);
+                $index++;
+            } else {
+                break;
+            }
+        }
+
+        // Index erhöhen, damit aufrufender Code die Spacer überspringt
+        $currentIndex = $index;
+
+        return $totalSpacing;
     }
 }
