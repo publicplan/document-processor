@@ -247,8 +247,10 @@ class TextRunElementConverter implements ElementConverterInterface
         $spaceAfter    = $pStyle->getSpaceAfter();
         $blockStyles[] = sprintf('margin-bottom: %scm;', $this->twipsToCm($spaceAfter));
 
-        $indentLeft = $pStyle->getIndentLeft();
-        $hanging    = $pStyle->getHanging();
+        $indentation = ParagraphIndentHelper::resolveEffectiveIndentation($pStyle);
+        $indentLeft  = $indentation['indentLeft'];
+        $hanging     = $indentation['hanging'];
+        $firstLine   = $indentation['firstLine'];
 
         // Spezialfall: Hanging Indent mit Tab
         if ($indentLeft && $hanging && $indentLeft === $hanging && str_contains($text, "\t")) {
@@ -261,6 +263,8 @@ class TextRunElementConverter implements ElementConverterInterface
         }
         if ($hanging) {
             $blockStyles[] = sprintf('text-indent: -%scm;', $this->twipsToCm($hanging));
+        } elseif ($firstLine) {
+            $blockStyles[] = sprintf('text-indent: %scm;', $this->twipsToCm($firstLine));
         }
 
         $result = sprintf(

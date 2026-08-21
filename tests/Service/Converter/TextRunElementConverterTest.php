@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Tests\Service\Converter;
 
 use PhpOffice\PhpWord\Element\TextRun;
+use PhpOffice\PhpWord\Style;
 use PhpOffice\PhpWord\Style\Paragraph;
 use PHPUnit\Framework\TestCase;
 use Publicplan\DocumentProcessor\Model\ConversionContext;
@@ -22,6 +23,11 @@ class TextRunElementConverterTest extends TestCase
     {
         $this->converter = new TextRunElementConverter();
         $this->context   = new ConversionContext();
+    }
+
+    protected function tearDown(): void
+    {
+        Style::resetStyles();
     }
 
     /**
@@ -198,6 +204,78 @@ class TextRunElementConverterTest extends TestCase
 
         $this->assertStringContainsString('border: 0.0264cm solid #000000;', $result);
         $this->assertStringContainsString('padding: 0.2cm;', $result);
+    }
+
+    public function testIndentIsResolvedFromParagraphStyleName(): void
+    {
+        Style::addParagraphStyle('Listenabsatz', [
+            'indentation' => ['left' => 720, 'hanging' => 180],
+        ]);
+
+        $paragraphStyle = new Paragraph();
+        $paragraphStyle->setStyleName('Listenabsatz');
+
+        $textRun = new TextRun($paragraphStyle);
+        $textRun->addText('Test text');
+
+        $result = $this->converter->convert($textRun, $this->context);
+
+        $this->assertStringContainsString('padding-left: 1.27cm;', $result);
+        $this->assertStringContainsString('text-indent: -0.32cm;', $result);
+    }
+
+    public function testIndentIsResolvedFromBasedOnParagraphStyleChain(): void
+    {
+        Style::addParagraphStyle('ListBase', [
+            'indentation' => ['left' => 540],
+        ]);
+        Style::addParagraphStyle('ListChild', ['basedOn' => 'ListBase']);
+
+        $paragraphStyle = new Paragraph();
+        $paragraphStyle->setStyleName('ListChild');
+
+        $textRun = new TextRun($paragraphStyle);
+        $textRun->addText('Test text');
+
+        $result = $this->converter->convert($textRun, $this->context);
+
+        $this->assertStringContainsString('padding-left: 0.95cm;', $result);
+    }
+
+    public function testDirectIndentOverridesStyleIndent(): void
+    {
+        Style::addParagraphStyle('Listenabsatz', [
+            'indentation' => ['left' => 720],
+        ]);
+
+        $paragraphStyle = new Paragraph();
+        $paragraphStyle->setStyleName('Listenabsatz');
+        $paragraphStyle->setIndentLeft(360);
+
+        $textRun = new TextRun($paragraphStyle);
+        $textRun->addText('Test text');
+
+        $result = $this->converter->convert($textRun, $this->context);
+
+        $this->assertStringContainsString('padding-left: 0.64cm;', $result);
+        $this->assertStringNotContainsString('padding-left: 1.27cm;', $result);
+    }
+
+    public function testFirstLineIndentIsResolvedFromParagraphStyleName(): void
+    {
+        Style::addParagraphStyle('FirstLineStyle', [
+            'indentation' => ['firstLine' => 360],
+        ]);
+
+        $paragraphStyle = new Paragraph();
+        $paragraphStyle->setStyleName('FirstLineStyle');
+
+        $textRun = new TextRun($paragraphStyle);
+        $textRun->addText('Einzeilige Überschrift');
+
+        $result = $this->converter->convert($textRun, $this->context);
+
+        $this->assertStringContainsString('text-indent: 0.64cm;', $result);
     }
 
     /**

@@ -6,9 +6,12 @@ namespace Publicplan\DocumentProcessor\Tests\Service;
 
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Style;
+use PhpOffice\PhpWord\Style\Paragraph;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
 use PHPUnit\Framework\TestCase;
+use ZipArchive;
 
 /**
  * Tests für den DocumentLoader Service.
@@ -22,6 +25,11 @@ class DocumentLoaderTest extends TestCase
     {
         $this->loader = new DocumentLoader();
         $this->testFilesDir = __DIR__ . '/../_fixtures';
+    }
+
+    protected function tearDown(): void
+    {
+        Style::resetStyles();
     }
 
     /**
@@ -116,6 +124,46 @@ class DocumentLoaderTest extends TestCase
         try {
             $size = $this->loader->extractDocumentDefaultFontSize($tempFile);
             $this->assertSame(14.0, $size);
+        } finally {
+            unlink($tempFile);
+        }
+    }
+
+    public function testLoadRegistersParagraphStyleIndentationFromStylesXml(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $phpWord->addSection()->addText('Test');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempFile);
+
+        $zip = new ZipArchive();
+        try {
+            $this->assertTrue($zip->open($tempFile) === true);
+            $stylesXml = $zip->getFromName('word/styles.xml');
+            $this->assertIsString($stylesXml);
+
+            $customStyle = '<w:style w:type="paragraph" w:styleId="Listenabsatz">'
+                . '<w:name w:val="List Paragraph"/>'
+                . '<w:basedOn w:val="Standard"/>'
+                . '<w:pPr><w:ind w:left="720" w:hanging="180" w:firstLine="0"/></w:pPr>'
+                . '</w:style>';
+            $patchedStylesXml = str_replace('</w:styles>', $customStyle . '</w:styles>', $stylesXml);
+            $this->assertTrue($zip->addFromString('word/styles.xml', $patchedStylesXml));
+        } finally {
+            $zip->close();
+        }
+
+        Style::resetStyles();
+        $this->loader->load($tempFile);
+        $style = Style::getStyle('Listenabsatz');
+
+        try {
+            $this->assertInstanceOf(Paragraph::class, $style);
+            $this->assertSame(720.0, $style->getIndentLeft());
+            $this->assertSame(180.0, $style->getHanging());
+            $this->assertSame('Standard', $style->getBasedOn());
         } finally {
             unlink($tempFile);
         }

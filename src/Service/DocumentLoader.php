@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Service;
 
 use Exception;
+use DOMDocument;
+use DOMXPath;
 use PhpOffice\PhpWord\Settings;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Style;
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
 use ZipArchive;
 
@@ -64,6 +67,8 @@ class DocumentLoader
                 $exception
             );
         }
+
+        $this->registerParagraphStylesFromStylesXml($filePath);
 
         return $doc;
     }
@@ -215,5 +220,83 @@ class DocumentLoader
         }
 
         return (float)$value;
+    }
+
+    private function registerParagraphStylesFromStylesXml(string $filePath): void
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($filePath) !== true) {
+            return;
+        }
+
+        try {
+            $stylesXml = $zip->getFromName('word/styles.xml');
+            if ($stylesXml === false) {
+                return;
+            }
+
+            $document = new DOMDocument();
+            $previous = libxml_use_internal_errors(true);
+            try {
+                if (!$document->loadXML($stylesXml)) {
+                    return;
+                }
+            } finally {
+                libxml_clear_errors();
+                libxml_use_internal_errors($previous);
+            }
+
+            $xpath = new DOMXPath($document);
+            $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+
+            $styles = $xpath->query('//w:style[@w:type="paragraph"]');
+            if ($styles === false) {
+                return;
+            }
+
+            foreach ($styles as $styleNode) {
+                $styleId = trim((string)$xpath->evaluate('string(@w:styleId)', $styleNode));
+                if ($styleId === '' || Style::getStyle($styleId) !== null) {
+                    continue;
+                }
+
+                $styleDefinition = [];
+                $basedOn         = trim((string)$xpath->evaluate('string(w:basedOn/@w:val)', $styleNode));
+                if ($basedOn !== '') {
+                    $styleDefinition['basedOn'] = $basedOn;
+                }
+
+                $indentation = [];
+                $left        = $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:left)', $styleNode));
+                $hanging     = $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:hanging)', $styleNode));
+                $firstLine   = $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:firstLine)', $styleNode));
+
+                if ($left !== null) {
+                    $indentation['left'] = $left;
+                }
+                if ($hanging !== null) {
+                    $indentation['hanging'] = $hanging;
+                }
+                if ($firstLine !== null) {
+                    $indentation['firstLine'] = $firstLine;
+                }
+                if ($indentation !== []) {
+                    $styleDefinition['indentation'] = $indentation;
+                }
+
+                Style::addParagraphStyle($styleId, $styleDefinition);
+            }
+        } finally {
+            $zip->close();
+        }
+    }
+
+    private function readTwips(mixed $rawValue): ?float
+    {
+        if (!is_string($rawValue) || $rawValue === '' || !is_numeric($rawValue)) {
+            return null;
+        }
+
+        return (float)$rawValue;
     }
 }
