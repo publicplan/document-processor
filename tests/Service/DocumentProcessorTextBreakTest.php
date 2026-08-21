@@ -58,7 +58,7 @@ class DocumentProcessorTextBreakTest extends TestCase
 
         $this->assertStringContainsString('<div', $result);
         $this->assertStringContainsString('</div>', $result);
-        $this->assertStringContainsString('>&#32;</p>', $result);
+        $this->assertStringContainsString('>&nbsp;</p>', $result);
         $this->assertStringNotContainsString('<br>', $result);
     }
 
@@ -97,12 +97,12 @@ class DocumentProcessorTextBreakTest extends TestCase
 
         $this->assertSame(1, substr_count($result, '<div'));
         $this->assertSame(1, substr_count($result, '</div>'));
-        $this->assertSame(2, substr_count($result, '>&#32;</p>'));
+        $this->assertSame(2, substr_count($result, '>&nbsp;</p>'));
         $this->assertStringNotContainsString('<br>', $result);
     }
 
     /**
-     * Test: TextBreak zwischen normalen Absätzen wird als <p>&#32;</p> ausgegeben.
+     * Test: TextBreak zwischen normalen Absätzen wird als <p>&nbsp;</p> ausgegeben.
      */
     public function testTextBreakBetweenNormalParagraphsBecomesEmptyParagraph(): void
     {
@@ -118,7 +118,7 @@ class DocumentProcessorTextBreakTest extends TestCase
         $result = $this->invokeConvertToHtml($phpWord);
 
         $this->assertStringNotContainsString('<div', $result);
-        $this->assertStringContainsString('>&#32;</p>', $result);
+        $this->assertStringContainsString('>&nbsp;</p>', $result);
         $this->assertStringNotContainsString('<br>', $result);
     }
 
@@ -153,7 +153,7 @@ class DocumentProcessorTextBreakTest extends TestCase
 
         $result = $this->invokeConvertToHtml($phpWord);
 
-        $this->assertSame(2, substr_count($result, '>&#32;</p>'));
+        $this->assertSame(2, substr_count($result, '>&nbsp;</p>'));
     }
 
     /**
@@ -197,7 +197,7 @@ class DocumentProcessorTextBreakTest extends TestCase
 
         // Der TextBreak sollte außerhalb des div sein
         $this->assertStringContainsString('</div>', $result);
-        $this->assertStringContainsString('>&#32;</p>', $result);
+        $this->assertStringContainsString('>&nbsp;</p>', $result);
 
         // Keine <br> Tags
         $this->assertStringNotContainsString('<br>', $result);
@@ -228,13 +228,13 @@ class DocumentProcessorTextBreakTest extends TestCase
             $listTag = str_contains($result, '<ol') ? 'ol' : 'ul';
             $this->assertStringContainsString('<' . $listTag, $result);
             $this->assertStringContainsString('</' . $listTag . '>', $result);
-            $this->assertStringContainsString('<p style="margin-bottom: 0cm;">&#32;</p>', $result);
+            $this->assertStringContainsString('<p style="margin-bottom: 0cm;">&nbsp;</p>', $result);
 
             $listStart = strpos($result, '<' . $listTag);
             $listEnd = strpos($result, '</' . $listTag . '>');
             $listSegment = substr($result, $listStart, $listEnd - $listStart + strlen('</' . $listTag . '>'));
 
-            $this->assertStringNotContainsString('<p style="margin-bottom: 0cm;">&#32;</p>', $listSegment);
+            $this->assertStringNotContainsString('<p style="margin-bottom: 0cm;">&nbsp;</p>', $listSegment);
         } finally {
             @unlink($filepath);
         }

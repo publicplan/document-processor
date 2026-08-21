@@ -29,8 +29,8 @@ class TextRunElementConverter implements ElementConverterInterface
         $text       = $renderData['html'];
 
         if ($text === '') {
-            // Leere Absätze als <p>&#32;</p> mit Styles ausgeben (wie in Word)
-            return $this->wrapWithParagraphStyles($element, '&#32;');
+            // Leere Absätze als <p>&nbsp;</p> mit Styles ausgeben (wie in Word)
+            return $this->wrapWithParagraphStyles($element, '&nbsp;');
         }
 
         return $this->wrapWithParagraphStyles($element, $text, $renderData['attributes']);

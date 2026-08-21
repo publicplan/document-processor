@@ -31,7 +31,7 @@ class TextRunElementConverterTest extends TestCase
     }
 
     /**
-     * Test: Leerer Absatz wird als <p>&#32;</p> ausgegeben.
+     * Test: Leerer Absatz wird als <p>&nbsp;</p> ausgegeben.
      */
     public function testEmptyParagraphOutputsSpace(): void
     {
@@ -40,11 +40,11 @@ class TextRunElementConverterTest extends TestCase
 
         $result = $this->converter->convert($textRun, $this->context);
 
-        $this->assertStringContainsString('>&#32;</p>', $result);
+        $this->assertStringContainsString('>&nbsp;</p>', $result);
     }
 
     /**
-     * Test: Leerer Absatz mit Borders wird als <p>&#32;</p> mit Border-Styles ausgegeben.
+     * Test: Leerer Absatz mit Borders wird als <p>&nbsp;</p> mit Border-Styles ausgegeben.
      */
     public function testEmptyParagraphWithBordersOutputsSpaceWithStyles(): void
     {
@@ -67,7 +67,7 @@ class TextRunElementConverterTest extends TestCase
 
         $result = $this->converter->convert($textRun, $this->context);
 
-        $this->assertStringContainsString('>&#32;</p>', $result);
+        $this->assertStringContainsString('>&nbsp;</p>', $result);
         $this->assertStringContainsString('border:', $result);
         $this->assertStringContainsString('padding:', $result);
     }

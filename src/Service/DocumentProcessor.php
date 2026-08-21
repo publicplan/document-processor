@@ -136,7 +136,7 @@ class DocumentProcessor
                     // Am Anfang des Dokuments -> <br>
                     if ($lastTextRun === null) {
                         if ($wasInsideList) {
-                            $text .= '<p style="margin-bottom: 0cm;">&#32;</p>' . PHP_EOL;
+                            $text .= '<p style="margin-bottom: 0cm;">&nbsp;</p>' . PHP_EOL;
                         } else {
                             $text .= '<br>' . PHP_EOL;
                         }
@@ -173,7 +173,7 @@ class DocumentProcessor
 
                         // <p> ausgeben
                     }
-                    $text .= sprintf('<p%s>&#32;</p>', $styleAttr) . PHP_EOL;
+                    $text .= sprintf('<p%s>&nbsp;</p>', $styleAttr) . PHP_EOL;
                     continue;
                 }
 
