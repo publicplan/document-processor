@@ -13,9 +13,11 @@ class ParserError
     public const string CONTAINS_UNACCEPTED_CHANGES = 'contains unaccepted changes';
     public const string CONTAINS_FORM_FIELDS        = 'contains form fields';
     public const string CONTAINS_UNHANDLED_ELEMENTS = 'contains unhandled elements';
+    public const string CONTAINS_INVALID_HTML       = 'contains invalid html fragment';
 
-    public const string SEVERITY_ERROR = 'error';
-    public const string SEVERITY_INFO  = 'info';
+    public const string SEVERITY_ERROR   = 'error';
+    public const string SEVERITY_WARNING = 'warning';
+    public const string SEVERITY_INFO    = 'info';
 
     protected string  $hash;
     protected string  $type;

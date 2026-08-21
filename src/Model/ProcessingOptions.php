@@ -10,7 +10,8 @@ namespace Publicplan\DocumentProcessor\Model;
 readonly class ProcessingOptions
 {
     public function __construct(
-        public bool $removeDeletedContent = true
+        public bool $removeDeletedContent = true,
+        public bool $validateHtml = false
     )
     {
     }

@@ -40,7 +40,7 @@ class ConversionContext
      */
     public function addMessage(ParserError $error, bool $distinct = false): void
     {
-        $severity = $error->getSeverity();
+        $severity = $this->normalizeSeverityGroup($error->getSeverity());
 
         if ($distinct && $this->isDuplicate($error)) {
             return;
@@ -67,6 +67,16 @@ class ConversionContext
     private function calculateHash(ParserError $error): string
     {
         return md5($error->getType() . $error->getSeverity() . $error->getMessage());
+    }
+
+    private function normalizeSeverityGroup(string $severity): string
+    {
+        return match ($severity) {
+            ParserError::SEVERITY_ERROR => 'errors',
+            ParserError::SEVERITY_WARNING => 'warnings',
+            ParserError::SEVERITY_INFO => 'infos',
+            default => $severity,
+        };
     }
 
     /**

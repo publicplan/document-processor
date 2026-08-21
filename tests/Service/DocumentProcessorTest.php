@@ -6,9 +6,12 @@ namespace Publicplan\DocumentProcessor\Tests\Service;
 
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
 use Publicplan\DocumentProcessor\Model\ProcessingOptions;
+use Publicplan\DocumentProcessor\Model\ParserError;
 use Publicplan\DocumentProcessor\Model\ProcessedDocument;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
 use Publicplan\DocumentProcessor\Service\DocumentProcessor;
+use Publicplan\DocumentProcessor\Service\Converter\ElementConverterInterface;
+use Publicplan\DocumentProcessor\Service\Converter\ElementConverterRegistry;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -134,9 +137,11 @@ class DocumentProcessorTest extends TestCase
         $this->assertArrayHasKey('hasUnacceptedChanges', $legacy);
         $this->assertArrayHasKey('messages', $legacy);
         $this->assertArrayHasKey('sourceFilename', $legacy);
-        
+        $this->assertArrayHasKey('isHtmlFragmentValid', $legacy);
+
         $this->assertTrue($legacy['hasUnacceptedChanges']);
         $this->assertEquals('legacy.docx', $legacy['sourceFilename']);
+        $this->assertNull($legacy['isHtmlFragmentValid']);
     }
 
     /**
@@ -167,6 +172,24 @@ class DocumentProcessorTest extends TestCase
         $this->assertCount(2, $allMessages);
         $this->assertContains($error, $allMessages);
         $this->assertContains($warning, $allMessages);
+    }
+
+    /**
+     * Test: Severity-Werte werden auf die erwarteten Message-Buckets gemappt.
+     */
+    public function testConversionContextMapsSeverityValuesToMessageBuckets(): void
+    {
+        $context = new \Publicplan\DocumentProcessor\Model\ConversionContext();
+
+        $context->addMessage(ParserError::create('error-type', ParserError::SEVERITY_ERROR));
+        $context->addMessage(ParserError::create('warning-type', ParserError::SEVERITY_WARNING));
+        $context->addMessage(ParserError::create('info-type', ParserError::SEVERITY_INFO));
+
+        $messages = $context->getMessages();
+
+        $this->assertCount(1, $messages['errors']);
+        $this->assertCount(1, $messages['warnings']);
+        $this->assertCount(1, $messages['infos']);
     }
 
     /**
@@ -217,5 +240,111 @@ class DocumentProcessorTest extends TestCase
 
         $this->assertStringContainsString('<del>Gelöscht</del>', $result->html);
         $this->assertStringNotContainsString('##deleted##', $result->html);
+    }
+
+    /**
+     * Test: HTML-Fragment-Validierung ist standardmäßig deaktiviert.
+     */
+    public function testProcessSkipsHtmlValidationByDefault(): void
+    {
+        $processor = $this->createProcessorWithFixedHtml('<p><strong>Kaputt</p>');
+
+        $result = $processor->process('/test/file.docx', 'test.docx');
+
+        $this->assertNull($result->isHtmlFragmentValid);
+        $this->assertFalse($result->wasHtmlValidated());
+        $this->assertCount(0, $result->getWarnings());
+    }
+
+    /**
+     * Test: Gültige HTML-Fragmente werden bei aktivierter Validierung bestätigt.
+     */
+    public function testProcessCanValidateHtmlFragment(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $section = $phpWord->addSection();
+        $section->addText('Valid');
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new DocumentProcessor($loader);
+
+        $result = $processor->process(
+            '/test/file.docx',
+            'test.docx',
+            new ProcessingOptions(validateHtml: true)
+        );
+
+        $this->assertTrue($result->isHtmlFragmentValid);
+        $this->assertTrue($result->wasHtmlValidated());
+        $this->assertCount(0, $result->getWarnings());
+    }
+
+    /**
+     * Test: Ungültige HTML-Fragmente erzeugen diagnostische Warnungen.
+     */
+    public function testProcessAddsWarningForInvalidHtmlFragmentWhenValidationIsEnabled(): void
+    {
+        $processor = $this->createProcessorWithFixedHtml('<p><strong>Kaputt</p>');
+
+        $result = $processor->process(
+            '/test/file.docx',
+            'test.docx',
+            new ProcessingOptions(validateHtml: true)
+        );
+
+        $this->assertFalse($result->isHtmlFragmentValid);
+        $this->assertTrue($result->wasHtmlValidated());
+        $this->assertNotEmpty($result->getWarnings());
+        $this->assertContainsEquals(
+            ParserError::CONTAINS_INVALID_HTML,
+            array_map(
+                static fn (ParserError $warning): string => $warning->getType(),
+                $result->getWarnings()
+            )
+        );
+    }
+
+    private function createProcessorWithFixedHtml(string $html): DocumentProcessor
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $section = $phpWord->addSection();
+        $section->addText('Inhalt');
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new DocumentProcessor($loader);
+        $registry = new ElementConverterRegistry();
+        $registry->register(new class ($html) implements ElementConverterInterface {
+            public function __construct(private readonly string $html)
+            {
+            }
+
+            public function supports(object $element): bool
+            {
+                return true;
+            }
+
+            public function convert(object $element, \Publicplan\DocumentProcessor\Model\ConversionContext $context): string
+            {
+                return $this->html;
+            }
+
+            public function getPriority(): int
+            {
+                return 1000;
+            }
+        });
+
+        $property = new \ReflectionProperty(DocumentProcessor::class, 'converterRegistry');
+        $property->setValue($processor, $registry);
+
+        return $processor;
     }
 }

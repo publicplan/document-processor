@@ -8,6 +8,7 @@ Standalone DOCX to HTML processor for PHP 8.4+ with Strategy Pattern architectur
 ## Features
 
 - ✅ **DOCX to HTML conversion**
+- ✅ **Optional HTML fragment validation**
 - ✅ **Strategy Pattern architecture** - 10 specialized element converters
 - ✅ **Clean Architecture** - SRP, testable, maintainable
 - ✅ **Stateless design** - Thread-safe processing
@@ -44,7 +45,19 @@ $resultWithDeletedContent = $processor->process(
     'filename.docx',
     new ProcessingOptions(removeDeletedContent: false)
 );
+
+// Optional: validate that the generated HTML fragment is parser-tolerant
+$validatedResult = $processor->process(
+    '/path/to/file.docx',
+    'filename.docx',
+    new ProcessingOptions(validateHtml: true)
+);
+
+$isHtmlFragmentValid = $validatedResult->isHtmlFragmentValid;
+$htmlValidationWarnings = $validatedResult->getWarnings();
 ```
+
+The optional validation checks whether the generated output can be parsed as an **HTML fragment**. It is intentionally diagnostic: the HTML is still returned, and parser findings are exposed via the existing message structure.
 
 ## Framework Integration
 

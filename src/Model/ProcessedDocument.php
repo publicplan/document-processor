@@ -18,13 +18,15 @@ readonly class ProcessedDocument
      * @param bool                         $hasUnacceptedChanges Ob Track-Changes vorhanden sind
      * @param array<string, ParserError[]> $messages             Nach Typ gruppierte Parser-Messages
      * @param string                       $sourceFilename       Ursprünglicher Dateiname
+     * @param bool|null                    $isHtmlFragmentValid  Ergebnis der optionalen HTML-Fragment-Validierung
      */
     public function __construct(
         public string            $html,
         public DateTimeInterface $lastModified,
         public bool              $hasUnacceptedChanges,
         public array             $messages,
-        public string            $sourceFilename
+        public string            $sourceFilename,
+        public ?bool             $isHtmlFragmentValid = null
     )
     {
     }
@@ -84,6 +86,7 @@ readonly class ProcessedDocument
             'hasUnacceptedChanges' => $this->hasUnacceptedChanges,
             'messages'             => $legacyMessages,
             'sourceFilename'       => $this->sourceFilename,
+            'isHtmlFragmentValid'  => $this->isHtmlFragmentValid,
         ];
     }
 
@@ -101,5 +104,13 @@ readonly class ProcessedDocument
     public function hasWarnings(): bool
     {
         return !empty($this->getWarnings());
+    }
+
+    /**
+     * Prüft, ob eine HTML-Fragment-Validierung ausgeführt wurde.
+     */
+    public function wasHtmlValidated(): bool
+    {
+        return $this->isHtmlFragmentValid !== null;
     }
 }

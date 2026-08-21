@@ -7,6 +7,8 @@ namespace Publicplan\DocumentProcessor\Service;
 use DateTime;
 use DateTimeInterface;
 use DateTimeZone;
+use DOMDocument;
+use LibXMLError;
 use Exception;
 use PhpOffice\PhpWord\Element\AbstractElement;
 use PhpOffice\PhpWord\Element\ListItemRun as DocList;
@@ -67,8 +69,13 @@ class DocumentProcessor
             $context->setDefaultFontSize($defaultFontSize);
             $context->setRemoveDeletedContent($processingOptions->removeDeletedContent);
 
-            $html = $this->convertToHtml($result, $context);
-            $html = $this->postProcessHtml($html, $processingOptions->removeDeletedContent);
+            $html                = $this->convertToHtml($result, $context);
+            $html                = $this->postProcessHtml($html, $processingOptions->removeDeletedContent);
+            $isHtmlFragmentValid = null;
+
+            if ($processingOptions->validateHtml) {
+                $isHtmlFragmentValid = $this->validateHtmlFragment($html, $context);
+            }
 
             if ($hasChanges) {
                 $context->addMessage(
@@ -86,7 +93,8 @@ class DocumentProcessor
                 lastModified: $this->extractLastModified($result),
                 hasUnacceptedChanges: $hasChanges,
                 messages: $context->getMessages(),
-                sourceFilename: $sourceFilename ?: basename($filePath)
+                sourceFilename: $sourceFilename ?: basename($filePath),
+                isHtmlFragmentValid: $isHtmlFragmentValid
             );
         } catch (DocumentLoadException $e) {
             // Ladefehler weitergeben
@@ -590,6 +598,60 @@ class DocumentProcessor
 
         // Füge Zeilenumbruch nach </p> ein
         return str_replace('</p>', '</p>' . PHP_EOL, $html);
+    }
+
+    /**
+     * Prüft, ob das erzeugte HTML-Fragment ohne Parser-Fehler gelesen werden kann.
+     */
+    private function validateHtmlFragment(string $html, ConversionContext $context): bool
+    {
+        $document = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+
+        try {
+            $wrappedHtml = sprintf('<div>%s</div>', $html);
+            $document->loadHTML($wrappedHtml, LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
+
+            $errors = array_filter(
+                libxml_get_errors(),
+                static fn (LibXMLError $error): bool => $error->level >= LIBXML_ERR_WARNING
+            );
+
+            foreach ($errors as $error) {
+                $context->addMessage(
+                    ParserError::create(
+                        ParserError::CONTAINS_INVALID_HTML,
+                        ParserError::SEVERITY_WARNING,
+                        $this->formatHtmlValidationMessage($error)
+                    ),
+                    true
+                );
+            }
+
+            return $errors === [];
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+    }
+
+    private function formatHtmlValidationMessage(LibXMLError $error): string
+    {
+        $message = trim(preg_replace('/\s+/', ' ', $error->message) ?? $error->message);
+
+        if ($error->line > 0 && $error->column > 0) {
+            return sprintf(
+                'Das erzeugte HTML-Fragment ist nicht parser-tauglich: %s (Zeile %d, Spalte %d).',
+                $message,
+                $error->line,
+                $error->column
+            );
+        }
+
+        return sprintf(
+            'Das erzeugte HTML-Fragment ist nicht parser-tauglich: %s.',
+            $message
+        );
     }
 
     /**
