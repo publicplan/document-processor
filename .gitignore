@@ -2,6 +2,7 @@
 /composer.lock
 /.phpunit.cache/
 /phpunit.xml.dist.bak
+/build/
 
 # IDE
 /.idea/

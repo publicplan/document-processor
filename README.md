@@ -26,6 +26,7 @@ composer require publicplan/document-processor
 ```php
 use Publicplan\DocumentProcessor\Service\DocumentProcessor;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
+use Publicplan\DocumentProcessor\Service\Ast\AstDocumentProcessor;
 use Publicplan\DocumentProcessor\Model\ProcessingOptions;
 
 // Initialize
@@ -56,9 +57,26 @@ $validatedResult = $processor->process(
 
 $isHtmlFragmentValid = $validatedResult->isHtmlFragmentValid;
 $htmlValidationWarnings = $validatedResult->getWarnings();
+
+// Optional: use the public AST API (stable integration contract)
+$astProcessor = new AstDocumentProcessor($loader);
+$astOnly = $astProcessor->processToAst('/path/to/file.docx', 'filename.docx');
+$astAndHtml = $astProcessor->processToAstAndHtml('/path/to/file.docx', 'filename.docx');
+
+$astVersion = $astOnly->astVersion; // currently "1.0.0"
+$ast = $astOnly->ast;               // public AST contract (no renderer internals)
+$htmlFromAstRoute = $astAndHtml->html;
 ```
 
 The optional validation checks whether the generated output can be parsed as an **HTML fragment**. It is intentionally diagnostic: the HTML is still returned, and parser findings are exposed via the existing message structure.
+
+### Public AST contract and compatibility
+
+- `AstDocumentProcessor::processToHtml(...)` returns HTML-only DTOs.
+- `AstDocumentProcessor::processToAst(...)` returns AST-only DTOs (`astVersion` + `ast`).
+- `AstDocumentProcessor::processToAstAndHtml(...)` returns both in one DTO.
+- `astVersion` follows SemVer and is independent from package versioning.
+- Internal renderer metadata (for example `legacy_html` render hints) is excluded from the public AST payload.
 
 ## Framework Integration
 
