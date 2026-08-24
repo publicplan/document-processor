@@ -7,6 +7,7 @@ namespace Publicplan\DocumentProcessor\Tests\Service\Ast;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\IOFactory;
 use PHPUnit\Framework\TestCase;
+use Publicplan\DocumentProcessor\Ast\Node\DocumentNode;
 use Publicplan\DocumentProcessor\Model\ProcessedAstAndHtmlDocument;
 use Publicplan\DocumentProcessor\Model\ProcessedAstDocument;
 use Publicplan\DocumentProcessor\Model\ProcessedDocument;
@@ -27,6 +28,15 @@ class AstDocumentProcessorApiTest extends TestCase
         $this->assertInstanceOf(ProcessedDocument::class, $result);
         $this->assertSame('test.docx', $result->sourceFilename);
         $this->assertStringContainsString('Hallo', $result->html);
+    }
+
+    public function test_process_to_document_node_returns_typed_document_node(): void
+    {
+        $processor = $this->createProcessorWithSimpleDocument();
+
+        $result = $processor->processToDocumentNode('/test/file.docx', 'test.docx');
+
+        $this->assertInstanceOf(DocumentNode::class, $result);
     }
 
     public function test_process_to_ast_returns_public_contract_without_internal_metadata(): void

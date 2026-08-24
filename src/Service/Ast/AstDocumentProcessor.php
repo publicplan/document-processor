@@ -10,6 +10,7 @@ use DateTimeZone;
 use DOMDocument;
 use Exception;
 use LibXMLError;
+use PhpOffice\PhpWord\PhpWord;
 use Publicplan\DocumentProcessor\Ast\Pass\AstNormalizationException;
 use Publicplan\DocumentProcessor\Ast\Pass\AstNormalizationPipeline;
 use Publicplan\DocumentProcessor\Ast\Pass\NormalizationPipelineFactory;
@@ -25,38 +26,40 @@ use Publicplan\DocumentProcessor\Model\ProcessedDocument;
 use Publicplan\DocumentProcessor\Model\ProcessingOptions;
 use Publicplan\DocumentProcessor\Service\Converter\DeletedContentHelper;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
-use PhpOffice\PhpWord\PhpWord;
 
 final class AstDocumentProcessor
 {
     private readonly AstNormalizationPipeline $normalizationPipeline;
 
     public function __construct(
-        private readonly DocumentLoader $documentLoader,
-        private readonly WordToAstConverter $astConverter = new WordToAstConverter(),
-        private readonly AstHtmlRenderer $astRenderer = new AstHtmlRenderer(),
+        private readonly DocumentLoader      $documentLoader,
+        private readonly WordToAstConverter  $astConverter = new WordToAstConverter(),
+        private readonly AstHtmlRenderer     $astRenderer = new AstHtmlRenderer(),
         private readonly PublicAstSerializer $publicAstSerializer = new PublicAstSerializer(),
-        ?AstNormalizationPipeline $normalizationPipeline = null
-    ) {
+        ?AstNormalizationPipeline            $normalizationPipeline = null
+    )
+    {
         $this->normalizationPipeline = $normalizationPipeline ?? NormalizationPipelineFactory::createStandardPipeline();
     }
 
     public function process(
-        string $filePath,
-        string $sourceFilename = '',
+        string             $filePath,
+        string             $sourceFilename = '',
         ?ProcessingOptions $processingOptions = null
-    ): ProcessedDocument {
+    ): ProcessedDocument
+    {
         return $this->processToHtml($filePath, $sourceFilename, $processingOptions);
     }
 
     public function processToHtml(
-        string $filePath,
-        string $sourceFilename = '',
+        string             $filePath,
+        string             $sourceFilename = '',
         ?ProcessingOptions $processingOptions = null
-    ): ProcessedDocument {
+    ): ProcessedDocument
+    {
         $processedState = $this->executeProcessing($filePath, $sourceFilename, $processingOptions);
-        $html = $this->astRenderer->render($processedState['document']);
-        $html = $this->postProcessHtml($html, $processedState['processingOptions']->removeDeletedContent);
+        $html           = $this->astRenderer->render($processedState['document']);
+        $html           = $this->postProcessHtml($html, $processedState['processingOptions']->removeDeletedContent);
 
         $isHtmlFragmentValid = null;
         if ($processedState['processingOptions']->validateHtml) {
@@ -74,10 +77,11 @@ final class AstDocumentProcessor
     }
 
     public function processToAst(
-        string $filePath,
-        string $sourceFilename = '',
+        string             $filePath,
+        string             $sourceFilename = '',
         ?ProcessingOptions $processingOptions = null
-    ): ProcessedAstDocument {
+    ): ProcessedAstDocument
+    {
         $processedState = $this->executeProcessing($filePath, $sourceFilename, $processingOptions);
 
         return new ProcessedAstDocument(
@@ -90,14 +94,33 @@ final class AstDocumentProcessor
         );
     }
 
-    public function processToAstAndHtml(
-        string $filePath,
-        string $sourceFilename = '',
+    /**
+     * Processes the document and returns the typed DocumentNode directly,
+     * without serialization. Useful for type-safe AST access in external renderers.
+     *
+     * @throws DocumentLoadException
+     * @throws DocumentProcessorException
+     */
+    public function processToDocumentNode(
+        string             $filePath,
+        string             $sourceFilename = '',
         ?ProcessingOptions $processingOptions = null
-    ): ProcessedAstAndHtmlDocument {
+    ): \Publicplan\DocumentProcessor\Ast\Node\DocumentNode
+    {
         $processedState = $this->executeProcessing($filePath, $sourceFilename, $processingOptions);
-        $html = $this->astRenderer->render($processedState['document']);
-        $html = $this->postProcessHtml($html, $processedState['processingOptions']->removeDeletedContent);
+
+        return $processedState['document'];
+    }
+
+    public function processToAstAndHtml(
+        string             $filePath,
+        string             $sourceFilename = '',
+        ?ProcessingOptions $processingOptions = null
+    ): ProcessedAstAndHtmlDocument
+    {
+        $processedState = $this->executeProcessing($filePath, $sourceFilename, $processingOptions);
+        $html           = $this->astRenderer->render($processedState['document']);
+        $html           = $this->postProcessHtml($html, $processedState['processingOptions']->removeDeletedContent);
 
         $isHtmlFragmentValid = null;
         if ($processedState['processingOptions']->validateHtml) {
@@ -127,23 +150,24 @@ final class AstDocumentProcessor
      * }
      */
     private function executeProcessing(
-        string $filePath,
-        string $sourceFilename = '',
+        string             $filePath,
+        string             $sourceFilename = '',
         ?ProcessingOptions $processingOptions = null
-    ): array {
+    ): array
+    {
         try {
             $processingOptions ??= new ProcessingOptions();
-            $hasChanges = false;
-            $defaultFontSize = null;
-            $loadedDocument = $this->documentLoader->loadWithDocumentMetadata($filePath, $hasChanges, $defaultFontSize);
+            $hasChanges        = false;
+            $defaultFontSize   = null;
+            $loadedDocument    = $this->documentLoader->loadWithDocumentMetadata($filePath, $hasChanges, $defaultFontSize);
 
             $context = new ConversionContext();
             $context->setDefaultFontSize($defaultFontSize);
             $context->setRemoveDeletedContent($processingOptions->removeDeletedContent);
 
-            $ast = $this->astConverter->convert($loadedDocument, $context);
+            $ast           = $this->astConverter->convert($loadedDocument, $context);
             $normalization = $this->normalizationPipeline->normalize($ast);
-            $document = $normalization['document'];
+            $document      = $normalization['document'];
 
             if ($processingOptions->templateSyntaxProfile !== null) {
                 $document = (new TemplateAnnotationPass($processingOptions->templateSyntaxProfile))->apply($document);
@@ -161,12 +185,12 @@ final class AstDocumentProcessor
             }
 
             return [
-                'document' => $document,
-                'context' => $context,
+                'document'             => $document,
+                'context'              => $context,
                 'hasUnacceptedChanges' => $hasChanges,
-                'lastModified' => $this->extractLastModified($loadedDocument),
-                'sourceFilename' => $sourceFilename !== '' ? $sourceFilename : basename($filePath),
-                'processingOptions' => $processingOptions,
+                'lastModified'         => $this->extractLastModified($loadedDocument),
+                'sourceFilename'       => $sourceFilename !== '' ? $sourceFilename : basename($filePath),
+                'processingOptions'    => $processingOptions,
             ];
         } catch (DocumentLoadException $e) {
             throw $e;
@@ -216,7 +240,7 @@ final class AstDocumentProcessor
 
             $errors = array_filter(
                 libxml_get_errors(),
-                static fn (LibXMLError $error): bool => $error->level >= LIBXML_ERR_WARNING
+                static fn(LibXMLError $error): bool => $error->level >= LIBXML_ERR_WARNING
             );
 
             foreach ($errors as $error) {
