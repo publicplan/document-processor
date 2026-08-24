@@ -12,6 +12,7 @@ use Publicplan\DocumentProcessor\Ast\Node\ListNode;
 use Publicplan\DocumentProcessor\Ast\Node\ParagraphNode;
 use Publicplan\DocumentProcessor\Ast\Node\SectionNode;
 use Publicplan\DocumentProcessor\Ast\Node\TextNode;
+use Publicplan\DocumentProcessor\Ast\Pass\BorderGroupingPass;
 use Publicplan\DocumentProcessor\Ast\Metadata\ListFormat;
 use Publicplan\DocumentProcessor\Ast\Pass\EmptyParagraphPass;
 use Publicplan\DocumentProcessor\Ast\Pass\ListContinuationPass;
@@ -176,5 +177,88 @@ class NormalizationPassesTest extends TestCase
         $this->assertInstanceOf(ParagraphNode::class, $normalizedParagraph);
         $this->assertCount(1, $normalizedParagraph->getChildren());
         $this->assertSame('[Einrichtungsname]', $normalizedParagraph->getChildren()[0]->getContent());
+    }
+
+    public function test_border_grouping_pass_keeps_styled_spacer_paragraphs_in_group(): void
+    {
+        $style = [
+            'borderTop' => ['size' => 4, 'color' => '000000', 'style' => 'single'],
+            'borderLeft' => ['size' => 4, 'color' => '000000', 'style' => 'single'],
+            'borderRight' => ['size' => 4, 'color' => '000000', 'style' => 'single'],
+            'borderBottom' => ['size' => 4, 'color' => '000000', 'style' => 'single'],
+        ];
+
+        $doc = new DocumentNode([
+            new SectionNode([
+                new ParagraphNode(children: [new TextNode('Border 1')], resolvedStyle: $style),
+                new ParagraphNode(children: [new TextNode('&nbsp;')], resolvedStyle: $style),
+                new ParagraphNode(children: [new TextNode('Border 2')], resolvedStyle: $style),
+            ]),
+        ]);
+
+        $result = (new BorderGroupingPass())->apply($doc);
+        $paragraphs = $result->getSections()[0]->getParagraphs();
+
+        $this->assertCount(1, $paragraphs);
+        $this->assertInstanceOf(BorderGroupNode::class, $paragraphs[0]);
+        $this->assertCount(3, $paragraphs[0]->getChildren());
+    }
+
+    public function test_list_normalization_pass_attaches_nested_items_as_children(): void
+    {
+        // Gegeben: Depth-0 Items mit nachfolgenden Depth-1 (nested) Items mit gleicher numId
+        $doc = new DocumentNode();
+        $section = new SectionNode();
+        
+        // Top-level item 1
+        $item1 = new ListItemNode(numId: 1, depth: 0, numFormat: ListFormat::Number);
+        $item1->addChild(new TextNode('Item 1'));
+        
+        // Top-level item 2
+        $item2 = new ListItemNode(numId: 1, depth: 0, numFormat: ListFormat::Number);
+        $item2->addChild(new TextNode('Item 2'));
+        
+        // Nested items under item 2 (with different format to differentiate)
+        $nestedItem1 = new ListItemNode(numId: 1, depth: 1, numFormat: ListFormat::LetterLower);
+        $nestedItem1->addChild(new TextNode('Item 2a'));
+        
+        $nestedItem2 = new ListItemNode(numId: 1, depth: 1, numFormat: ListFormat::LetterLower);
+        $nestedItem2->addChild(new TextNode('Item 2b'));
+        
+        $section->addParagraph($item1);
+        $section->addParagraph($item2);
+        $section->addParagraph($nestedItem1);
+        $section->addParagraph($nestedItem2);
+        $doc->addSection($section);
+
+        // Wenn: ListNormalizationPass ausgeführt wird
+        $pass = new ListNormalizationPass();
+        $result = $pass->apply($doc);
+
+        // Dann: Es gibt eine ListNode mit 2 Top-Level-Items
+        $paragraphs = $result->getSections()[0]->getParagraphs();
+        $this->assertCount(1, $paragraphs);
+        $this->assertInstanceOf(ListNode::class, $paragraphs[0]);
+        $this->assertCount(2, $paragraphs[0]->getItems());
+        
+        // Und: Item 1 hat keine Kinder-ListItems
+        $item1Result = $paragraphs[0]->getItems()[0];
+        $this->assertInstanceOf(ListItemNode::class, $item1Result);
+        $this->assertEquals(0, $item1Result->getDepth());
+        $this->assertEmpty(array_filter($item1Result->getChildren(), 
+            fn($child) => $child instanceof ListItemNode));
+        
+        // Und: Item 2 hat die 2 nested Items als Kinder
+        $item2Result = $paragraphs[0]->getItems()[1];
+        $this->assertInstanceOf(ListItemNode::class, $item2Result);
+        $this->assertEquals(0, $item2Result->getDepth());
+        $nestedListItems = array_filter($item2Result->getChildren(), 
+            fn($child) => $child instanceof ListItemNode);
+        $this->assertCount(2, $nestedListItems);
+        
+        // Und: Die nested Items haben depth=1
+        foreach ($nestedListItems as $nested) {
+            $this->assertEquals(1, $nested->getDepth());
+        }
     }
 }
