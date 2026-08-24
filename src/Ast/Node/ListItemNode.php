@@ -64,6 +64,12 @@ class ListItemNode extends AstNode
         return $this;
     }
 
+    public function setChildren(array $children): self
+    {
+        $this->children = $children;
+        return $this;
+    }
+
     public function toArray(): array
     {
         return [

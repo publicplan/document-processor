@@ -84,15 +84,12 @@ final class WordToAstConverter
                     if ($legacyHtml !== null) {
                         if (str_starts_with($legacyHtml, '<br>')) {
                             $sectionNode->addParagraph(new BreakNode('line', renderHints: new RenderHints([
-                                'legacy_html' => $legacyHtml,
                             ])));
                         } else {
                             $breakParagraph = new ParagraphNode(
                                 children: [new TextNode('&nbsp;')],
                                 spacingAfter: 0.0,
                                 renderHints: new RenderHints([
-                                    'legacy_html' => $legacyHtml,
-                                    'legacy_html_no_border' => $legacyHtml,
                                 ])
                             );
                             $sectionNode->addParagraph($breakParagraph);
@@ -118,12 +115,11 @@ final class WordToAstConverter
                     $listConfig = $this->listConverter->createListConfig($element);
                     $listItemNode = new ListItemNode(
                         numId: (int)($element->getStyle()?->getNumId() ?? 0),
-                        depth: $element->getDepth(),
+                        depth: (int)$element->getDepth(),
                         numFormat: $this->mapListFormat($listConfig->tag, $listConfig->type),
                         children: $this->convertInlineElements($element->getElements(), $context),
                         resolvedStyle: $this->extractParagraphStyle($element->getParagraphStyle()),
                         renderHints: new RenderHints([
-                            'legacy_html' => $this->listConverter->convertWithSpacerSpacing($element, $context, $bottomSpacingCm, $spacerSpacingCm),
                             'list_tag' => $listConfig->tag,
                             'list_type' => $listConfig->type,
                             'list_start' => $listConfig->start,
@@ -146,7 +142,6 @@ final class WordToAstConverter
                         preserveSpace: false,
                         trackChange: (bool)$fontStyle?->isStrikethrough() ? TrackChangeType::Deleted : TrackChangeType::None,
                         renderHints: new RenderHints([
-                            'legacy_html' => $this->textConverter->convert($element, $context),
                         ])
                     ));
                     continue;
@@ -157,7 +152,6 @@ final class WordToAstConverter
                         href: $element->getSource(),
                         children: [new TextNode($element->getText())],
                         renderHints: new RenderHints([
-                            'legacy_html' => $this->linkConverter->convert($element, $context),
                         ])
                     ));
                     continue;
@@ -169,7 +163,6 @@ final class WordToAstConverter
                         fieldCode: $fieldText,
                         fieldResult: $fieldText,
                         renderHints: new RenderHints([
-                            'legacy_html' => $fieldText,
                         ])
                     ));
                     continue;
@@ -188,8 +181,6 @@ final class WordToAstConverter
                         lineHeight: null,
                         resolvedStyle: $this->extractParagraphStyle($element->getParagraphStyle()),
                         renderHints: new RenderHints([
-                            'legacy_html' => $legacyHtml,
-                            'legacy_html_no_border' => $this->removeBorderStyles($legacyHtml),
                         ])
                     );
                     $sectionNode->addParagraph($paragraph);
@@ -198,14 +189,12 @@ final class WordToAstConverter
 
                 if ($element instanceof DocTable) {
                     $tableNode = $this->convertTable($element, $context);
-                    $tableNode->getRenderHints()->set('legacy_html', $this->tableConverter->convert($element, $context));
                     $sectionNode->addParagraph($tableNode);
                     continue;
                 }
 
                 if ($element instanceof DocTextBox) {
                     $textBoxNode = $this->convertTextBox($element, $context);
-                    $textBoxNode->getRenderHints()->set('legacy_html', $this->textBoxConverter->convert($element, $context));
                     $sectionNode->addParagraph($textBoxNode);
                     continue;
                 }
@@ -213,7 +202,6 @@ final class WordToAstConverter
                 if ($element instanceof PageBreak) {
                     $sectionNode->addParagraph(new PageBreakNode(
                         renderHints: new RenderHints([
-                            'legacy_html' => $this->pageBreakConverter->convert($element, $context),
                         ])
                     ));
                     continue;
@@ -244,7 +232,6 @@ final class WordToAstConverter
                     preserveSpace: false,
                     trackChange: (bool)$fontStyle?->isStrikethrough() ? TrackChangeType::Deleted : TrackChangeType::None,
                     renderHints: new RenderHints([
-                        'legacy_html' => $this->textConverter->convert($element, $context),
                     ])
                 );
                 continue;
@@ -260,7 +247,6 @@ final class WordToAstConverter
                         ),
                     ],
                     renderHints: new RenderHints([
-                        'legacy_html' => $this->linkConverter->convert($element, $context),
                     ])
                 );
                 $nodes[] = $linkNode;
@@ -269,7 +255,6 @@ final class WordToAstConverter
 
             if ($element instanceof DocBreak) {
                 $nodes[] = new BreakNode('line', renderHints: new RenderHints([
-                    'legacy_html' => $this->breakConverter->convert($element, $context),
                 ]));
                 continue;
             }
@@ -279,7 +264,6 @@ final class WordToAstConverter
                     fieldCode: implode(' ', $element->getText()),
                     fieldResult: implode(' ', $element->getText()),
                     renderHints: new RenderHints([
-                        'legacy_html' => implode(' ', $element->getText()),
                     ])
                 );
                 continue;
@@ -323,8 +307,6 @@ final class WordToAstConverter
                             children: $this->convertInlineElements($cellElement->getElements(), $context),
                             resolvedStyle: $this->extractParagraphStyle($cellElement->getParagraphStyle()),
                             renderHints: new RenderHints([
-                                'legacy_html' => $legacyHtml,
-                                'legacy_html_no_border' => $this->removeBorderStyles($legacyHtml),
                             ])
                         ));
                         continue;
@@ -332,7 +314,6 @@ final class WordToAstConverter
 
                     if ($cellElement instanceof DocBreak) {
                         $cellNode->addChild(new BreakNode('line', renderHints: new RenderHints([
-                            'legacy_html' => $this->breakConverter->convert($cellElement, $context),
                         ])));
                     }
                 }
@@ -348,19 +329,31 @@ final class WordToAstConverter
     private function convertTextBox(DocTextBox $textBox, ConversionContext $context): TextBoxNode
     {
         $node = new TextBoxNode();
+        $children = [];
 
         foreach ($textBox->getElements() as $element) {
             if ($element instanceof DocTextRun) {
-                $legacyHtml = $this->textRunConverter->convert($element, $context);
-                $node->addChild(new ParagraphNode(
-                    children: $this->convertInlineElements($element->getElements(), $context),
-                    resolvedStyle: $this->extractParagraphStyle($element->getParagraphStyle()),
-                    renderHints: new RenderHints([
-                        'legacy_html' => $legacyHtml,
-                        'legacy_html_no_border' => $this->removeBorderStyles($legacyHtml),
-                    ])
-                ));
+                $children = array_merge($children, $this->convertInlineElements($element->getElements(), $context));
+            } elseif ($element instanceof DocText) {
+                $fontStyle = $element->getFontStyle();
+                $children[] = new TextNode(
+                    content: $element->getText() ?? '',
+                    bold: (bool)$fontStyle?->isBold(),
+                    italic: (bool)$fontStyle?->isItalic(),
+                    underline: ($fontStyle?->getUnderline() ?? 'none') !== 'none',
+                    fontSize: $fontStyle?->getSize() !== null ? (float)$fontStyle->getSize() : null,
+                    preserveSpace: false,
+                    trackChange: (bool)$fontStyle?->isStrikethrough() ? TrackChangeType::Deleted : TrackChangeType::None,
+                    renderHints: new RenderHints([])
+                );
             }
+        }
+
+        if (!empty($children)) {
+            $node->addChild(new ParagraphNode(
+                children: $children,
+                renderHints: new RenderHints([])
+            ));
         }
 
         return $node;

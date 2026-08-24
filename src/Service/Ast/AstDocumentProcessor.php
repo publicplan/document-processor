@@ -13,6 +13,7 @@ use LibXMLError;
 use Publicplan\DocumentProcessor\Ast\Pass\AstNormalizationException;
 use Publicplan\DocumentProcessor\Ast\Pass\AstNormalizationPipeline;
 use Publicplan\DocumentProcessor\Ast\Pass\NormalizationPipelineFactory;
+use Publicplan\DocumentProcessor\Ast\Pass\TemplateAnnotationPass;
 use Publicplan\DocumentProcessor\Enum\ControlCharacter;
 use Publicplan\DocumentProcessor\Exception\DocumentLoadException;
 use Publicplan\DocumentProcessor\Exception\DocumentProcessorException;
@@ -142,6 +143,11 @@ final class AstDocumentProcessor
 
             $ast = $this->astConverter->convert($loadedDocument, $context);
             $normalization = $this->normalizationPipeline->normalize($ast);
+            $document = $normalization['document'];
+
+            if ($processingOptions->templateSyntaxProfile !== null) {
+                $document = (new TemplateAnnotationPass($processingOptions->templateSyntaxProfile))->apply($document);
+            }
 
             if ($hasChanges) {
                 $context->addMessage(
@@ -155,7 +161,7 @@ final class AstDocumentProcessor
             }
 
             return [
-                'document' => $normalization['document'],
+                'document' => $document,
                 'context' => $context,
                 'hasUnacceptedChanges' => $hasChanges,
                 'lastModified' => $this->extractLastModified($loadedDocument),

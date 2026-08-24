@@ -105,8 +105,24 @@ tests/Service/Ast/
 
 ## Interpretation fuer Run 07
 
-Run 07 fuegt optionales Template-/Placeholder-Parsing hinzu und bleibt strikt auf der oeffentlichen AST-Sicht:
+Run 07 vereinfacht die AST-Struktur und bereitet Template-/Placeholder-Parsing vor:
 
-1. Parser-Annotationen duerfen nur auf Public-Contract-Feldern (inkl. `sourceRef`) aufsetzen.
-2. Neue Token/Marker fuer Placeholder muessen als additive, AST-versionierte Erweiterung eingefuehrt werden (kein Bruch von `1.0.0`-Konsumenten).
-3. Keine App-Semantik im Core: nur Syntax-Erkennung/Annotation, keine Auswertung oder Business-Regeln.
+1. TextCoalescingPass implementieren
+   - Aufeinanderfolgende TextNodes mit gleicher Formatierung zusammenfassen
+   - Erste Priorität: AST app-konsum-tauglich machen
+   - Reduktion unnötiger Struktur-Komplexität
+
+2. legacy_html-Hints entfernen
+   - NormalizationPipeline auf deterministische Renderung umschalten
+   - PublicAstSerializer wird sauberer (keine Render-Interna mehr)
+   - Parity-Scaffold ist nicht mehr nötig
+
+3. HTML-Parity verifizieren
+   - AST-HTML vs. Legacy-HTML vergleichen
+   - Kleine, dokumentierte Unterschiede sind akzeptabel
+   - Ziel: HTML sollte "ähnlich genug" sein für den Public Contract
+
+4. Basis für Template-/Placeholder-Parsing
+   - Parser arbeitet auf vereinfachtem AST
+   - Annotationen nur auf Public-Contract-Feldern (inkl. `sourceRef`)
+   - Keine App-Semantik im Core: nur Syntax-Erkennung/Annotation

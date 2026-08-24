@@ -216,6 +216,27 @@ class DocumentProcessorTest extends TestCase
         $this->assertStringNotContainsString('##deleted##', $result->html);
     }
 
+    public function testProcessSimplifiesAdjacentIdenticalInlineTags(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $section = $phpWord->addSection();
+        $paragraph = $section->addTextRun();
+        $paragraph->addText('[', ['bold' => true]);
+        $paragraph->addText('Einrichtungsname', ['bold' => true]);
+        $paragraph->addText(']', ['bold' => true]);
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new DocumentProcessor($loader);
+        $result = $processor->process('/test/file.docx', 'test.docx');
+
+        $this->assertStringContainsString('<strong>[Einrichtungsname]</strong>', $result->html);
+        $this->assertStringNotContainsString('</strong><strong>', $result->html);
+    }
+
     /**
      * Test: Gelöschte Inhalte bleiben optional als HTML sichtbar.
      */

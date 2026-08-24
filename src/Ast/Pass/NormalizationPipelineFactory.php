@@ -37,6 +37,9 @@ class NormalizationPipelineFactory
      * 
      * 7. HangingIndentPass
      *    - Markiert Absätze mit Hanging-Indent-Struktur
+     * 
+     * 8. TextCoalescingPass
+     *    - Fasst aufeinanderfolgende TextNodes mit gleicher Formatierung zusammen
      */
     public static function createStandardPipeline(): AstNormalizationPipeline
     {
@@ -49,6 +52,7 @@ class NormalizationPipelineFactory
         $pipeline->addPass(new EmptyParagraphPass());
         $pipeline->addPass(new InlineScalePass());
         $pipeline->addPass(new HangingIndentPass());
+        $pipeline->addPass(new TextCoalescingPass());
 
         return $pipeline;
     }

@@ -8,12 +8,14 @@ Standalone DOCX to HTML processor for PHP 8.4+ with Strategy Pattern architectur
 ## Features
 
 - ✅ **DOCX to HTML conversion**
+- ✅ **Stable public AST API** - HTML, AST, or both from one processor
+- ✅ **Optional template syntax annotation** - syntax detection without semantic evaluation
 - ✅ **Optional HTML fragment validation**
 - ✅ **Strategy Pattern architecture** - 10 specialized element converters
 - ✅ **Clean Architecture** - SRP, testable, maintainable
 - ✅ **Stateless design** - Thread-safe processing
 - ✅ **List wrapper metadata** - HTML `<ul>/<ol>` tags carry `data-docx-list-id` and `data-docx-list-key`
-- ✅ **Comprehensive testing** - 33 tests, 71 assertions
+- ✅ **Comprehensive testing**
 
 ## Installation
 
@@ -27,6 +29,7 @@ composer require publicplan/document-processor
 use Publicplan\DocumentProcessor\Service\DocumentProcessor;
 use Publicplan\DocumentProcessor\Service\DocumentLoader;
 use Publicplan\DocumentProcessor\Service\Ast\AstDocumentProcessor;
+use Publicplan\DocumentProcessor\Service\Ast\Template\GenericTemplateSyntaxProfile;
 use Publicplan\DocumentProcessor\Model\ProcessingOptions;
 
 // Initialize
@@ -63,7 +66,14 @@ $astProcessor = new AstDocumentProcessor($loader);
 $astOnly = $astProcessor->processToAst('/path/to/file.docx', 'filename.docx');
 $astAndHtml = $astProcessor->processToAstAndHtml('/path/to/file.docx', 'filename.docx');
 
-$astVersion = $astOnly->astVersion; // currently "1.0.0"
+// Optional: enable template syntax annotation on the public AST
+$annotatedAst = $astProcessor->processToAst(
+    '/path/to/file.docx',
+    'filename.docx',
+    new ProcessingOptions(templateSyntaxProfile: new GenericTemplateSyntaxProfile())
+);
+
+$astVersion = $astOnly->astVersion; // currently "1.1.0"
 $ast = $astOnly->ast;               // public AST contract (no renderer internals)
 $htmlFromAstRoute = $astAndHtml->html;
 ```
@@ -77,6 +87,54 @@ The optional validation checks whether the generated output can be parsed as an 
 - `AstDocumentProcessor::processToAstAndHtml(...)` returns both in one DTO.
 - `astVersion` follows SemVer and is independent from package versioning.
 - Internal renderer metadata (for example `legacy_html` render hints) is excluded from the public AST payload.
+
+### Optional template syntax annotation
+
+The AST route can optionally annotate placeholder and control syntax without evaluating it.
+
+- Annotation is **disabled by default**.
+- Enable it by passing a `TemplateSyntaxProfile` via `ProcessingOptions`.
+- The bundled `GenericTemplateSyntaxProfile` recognizes `{{ ... }}`, `{% ... %}` and `#{ ... }`.
+- Control fragments inside `{% ... %}` are additionally classified as `when`, `else_if`, `else` or `end` when they start with `wenn`, `sonst wenn`, `sonst` or `ende`.
+- Incomplete fragments are preserved and marked as `malformed`.
+- Detected fragments are exposed on `metadata.sourceRef.xmlAttributes.templateAnnotations`.
+
+Example:
+
+```php
+use Publicplan\DocumentProcessor\Model\ProcessingOptions;
+use Publicplan\DocumentProcessor\Service\Ast\AstDocumentProcessor;
+use Publicplan\DocumentProcessor\Service\Ast\Template\GenericTemplateSyntaxProfile;
+use Publicplan\DocumentProcessor\Service\DocumentLoader;
+
+$processor = new AstDocumentProcessor(new DocumentLoader());
+
+$result = $processor->processToAst(
+    '/path/to/file.docx',
+    'template.docx',
+    new ProcessingOptions(
+        templateSyntaxProfile: new GenericTemplateSyntaxProfile()
+    )
+);
+
+$annotations = $result->ast['sections'][0]['paragraphs'][0]['metadata']['sourceRef']['xmlAttributes']['templateAnnotations'] ?? [];
+```
+
+Implement your own `TemplateSyntaxProfile` to support application-specific dialects. See [`doc/template-syntax-profiles.md`](doc/template-syntax-profiles.md).
+
+### Boundary for consuming applications
+
+The library stays intentionally syntax-oriented:
+
+- it exposes document structure via the public AST
+- it can optionally mark placeholder/control syntax ranges
+- it does **not** evaluate conditions, resolve placeholders, or attach business meaning
+
+Consuming applications should therefore:
+
+1. choose the bundled `GenericTemplateSyntaxProfile` or provide their own profile
+2. interpret `templateAnnotations` in the application layer
+3. migrate business logic away from HTML re-parsing toward AST-driven processing where useful
 
 ## Framework Integration
 

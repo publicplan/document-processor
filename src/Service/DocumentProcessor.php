@@ -613,8 +613,10 @@ class DocumentProcessor
                 ),
                 '',
                 $html
-            );
+            ) ?? $html;
         }
+
+        $html = (new HtmlInlineTagSimplifier())->simplify($html);
 
         // Füge Zeilenumbruch nach </p> ein
         return str_replace('</p>', '</p>' . PHP_EOL, $html);

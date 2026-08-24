@@ -83,7 +83,7 @@ final class AstHtmlRenderer
         }
 
         if ($node instanceof PageBreakNode) {
-            return $this->legacyHtml($node) ?? '<div class="page-break">Seitenwechsel</div>';
+            return '<div class="page-break">Seitenwechsel</div>';
         }
 
         if ($node instanceof TextNode) {
@@ -95,28 +95,14 @@ final class AstHtmlRenderer
         }
 
         if ($node instanceof FieldTextNode) {
-            return $this->legacyHtml($node) ?? ($node->getFieldResult() ?? $node->getFieldCode());
+            return $node->getFieldResult() ?? $node->getFieldCode();
         }
 
-        return $this->legacyHtml($node) ?? '';
+        return '';
     }
 
     private function renderParagraph(ParagraphNode $paragraph, bool $insideBorderGroup): string
     {
-        $legacyHtml = $this->legacyHtml($paragraph);
-        if ($legacyHtml !== null) {
-            if ($insideBorderGroup) {
-                $legacyWithoutBorder = $paragraph->getRenderHints()->getHint('legacy_html_no_border');
-                if (is_string($legacyWithoutBorder)) {
-                    return $legacyWithoutBorder;
-                }
-
-                return $this->removeBorderStyles($legacyHtml);
-            }
-
-            return $legacyHtml;
-        }
-
         $text = $this->renderInlineNodes($paragraph->getChildren());
         if ($text === '') {
             $text = '&nbsp;';
@@ -165,11 +151,6 @@ final class AstHtmlRenderer
 
     private function renderListItem(ListItemNode $item): string
     {
-        $legacyHtml = $this->legacyHtml($item);
-        if ($legacyHtml !== null) {
-            return $legacyHtml;
-        }
-
         $content = $this->renderInlineNodes($item->getChildren());
         if ($content === '') {
             return '';
@@ -205,11 +186,6 @@ final class AstHtmlRenderer
 
     private function renderTable(TableNode $table): string
     {
-        $legacyHtml = $this->legacyHtml($table);
-        if ($legacyHtml !== null) {
-            return $legacyHtml;
-        }
-
         $html = sprintf('<table class="table jrvTable">%s', PHP_EOL);
         foreach ($table->getRows() as $row) {
             if (!$row instanceof TableRowNode) {
@@ -240,11 +216,6 @@ final class AstHtmlRenderer
 
     private function renderTextBox(TextBoxNode $box): string
     {
-        $legacyHtml = $this->legacyHtml($box);
-        if ($legacyHtml !== null) {
-            return $legacyHtml;
-        }
-
         $content = '';
         foreach ($box->getChildren() as $child) {
             if ($child instanceof AstNode) {
@@ -257,11 +228,6 @@ final class AstHtmlRenderer
 
     private function renderBreak(BreakNode $break): string
     {
-        $legacyHtml = $this->legacyHtml($break);
-        if ($legacyHtml !== null) {
-            return $legacyHtml;
-        }
-
         if ($break->getType() === 'page') {
             return '<div class="page-break">Seitenwechsel</div>';
         }
@@ -330,11 +296,6 @@ final class AstHtmlRenderer
                 $html .= $child->getFieldResult() ?? $child->getFieldCode();
                 continue;
             }
-
-            $legacyHtml = $this->legacyHtml($child);
-            if ($legacyHtml !== null) {
-                $html .= $legacyHtml;
-            }
         }
 
         return $html;
@@ -342,11 +303,6 @@ final class AstHtmlRenderer
 
     private function renderTextNode(TextNode $textNode): string
     {
-        $legacyHtml = $this->legacyHtml($textNode);
-        if ($legacyHtml !== null) {
-            return $legacyHtml;
-        }
-
         $text = str_replace("\xC2\xA0", '&nbsp;', $textNode->getContent());
         $tags = [];
 
@@ -375,11 +331,6 @@ final class AstHtmlRenderer
 
     private function renderLinkNode(LinkNode $linkNode): string
     {
-        $legacyHtml = $this->legacyHtml($linkNode);
-        if ($legacyHtml !== null) {
-            return $legacyHtml;
-        }
-
         $href = $linkNode->getHref();
         $content = $this->renderInlineNodes($linkNode->getChildren());
         if ($href === null || $href === '') {
@@ -503,12 +454,6 @@ final class AstHtmlRenderer
     {
         $value = $item->getRenderHints()->getHint($key);
         return is_int($value) ? $value : (is_numeric($value) ? (int)$value : null);
-    }
-
-    private function legacyHtml(AstNode $node): ?string
-    {
-        $legacy = $node->getRenderHints()->getHint('legacy_html');
-        return is_string($legacy) ? $legacy : null;
     }
 
     private function removeBorderStyles(string $html): string

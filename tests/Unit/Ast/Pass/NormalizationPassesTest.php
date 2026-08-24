@@ -5,17 +5,18 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Tests\Unit\Ast\Pass;
 
 use PHPUnit\Framework\TestCase;
+use Publicplan\DocumentProcessor\Ast\Node\BorderGroupNode;
 use Publicplan\DocumentProcessor\Ast\Node\DocumentNode;
-use Publicplan\DocumentProcessor\Ast\Node\SectionNode;
-use Publicplan\DocumentProcessor\Ast\Node\ParagraphNode;
-use Publicplan\DocumentProcessor\Ast\Node\TextNode;
 use Publicplan\DocumentProcessor\Ast\Node\ListItemNode;
 use Publicplan\DocumentProcessor\Ast\Node\ListNode;
+use Publicplan\DocumentProcessor\Ast\Node\ParagraphNode;
+use Publicplan\DocumentProcessor\Ast\Node\SectionNode;
+use Publicplan\DocumentProcessor\Ast\Node\TextNode;
 use Publicplan\DocumentProcessor\Ast\Metadata\ListFormat;
-use Publicplan\DocumentProcessor\Ast\Pass\ListNormalizationPass;
-use Publicplan\DocumentProcessor\Ast\Pass\ListContinuationPass;
-use Publicplan\DocumentProcessor\Ast\Pass\ListSpacerPass;
 use Publicplan\DocumentProcessor\Ast\Pass\EmptyParagraphPass;
+use Publicplan\DocumentProcessor\Ast\Pass\ListContinuationPass;
+use Publicplan\DocumentProcessor\Ast\Pass\ListNormalizationPass;
+use Publicplan\DocumentProcessor\Ast\Pass\ListSpacerPass;
 use Publicplan\DocumentProcessor\Ast\Pass\NormalizationPipelineFactory;
 
 class NormalizationPassesTest extends TestCase
@@ -149,5 +150,31 @@ class NormalizationPassesTest extends TestCase
         foreach ($result['passes'] as $pass) {
             $this->assertTrue($pass['success'], "Pass {$pass['name']} failed: {$pass['error']}");
         }
+    }
+
+    public function test_text_coalescing_pass_reaches_paragraphs_inside_border_groups(): void
+    {
+        $paragraph = new ParagraphNode(children: [
+            new TextNode('[', bold: true),
+            new TextNode('Einrichtungsname', bold: true),
+            new TextNode(']', bold: true),
+        ]);
+
+        $doc = new DocumentNode([
+            new SectionNode([
+                new BorderGroupNode([$paragraph]),
+            ]),
+        ]);
+
+        $pipeline = NormalizationPipelineFactory::createStandardPipeline();
+        $result = $pipeline->normalize($doc);
+
+        $borderGroup = $result['document']->getSections()[0]->getParagraphs()[0];
+        $normalizedParagraph = $borderGroup->getChildren()[0];
+
+        $this->assertInstanceOf(BorderGroupNode::class, $borderGroup);
+        $this->assertInstanceOf(ParagraphNode::class, $normalizedParagraph);
+        $this->assertCount(1, $normalizedParagraph->getChildren());
+        $this->assertSame('[Einrichtungsname]', $normalizedParagraph->getChildren()[0]->getContent());
     }
 }
