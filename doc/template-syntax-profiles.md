@@ -100,6 +100,8 @@ Control fragments are additionally classified by their normalized leading keywor
 
 Fragments with an opening delimiter but no closing delimiter are still returned as `malformed`. The library does not repair, balance, validate or interpret such fragments.
 
+For the default delimiters, empty content (for example `{{ }}`) and non-interpretable control expressions (for example `{% Leerzeile löschen %}`) are marked as `malformed`.
+
 Functions are not modeled as a separate `kind` in the reference profile. They are simply part of the enclosing placeholder or control fragment.
 
 ## Custom profiles

@@ -125,13 +125,29 @@ class ListNormalizationPass implements AstPass
         if ($nestedDepth === $parentDepth + 1) {
             // Direkt unter $parent -> als Kind hinzufügen
             $parent->addChild($nestedItem);
-        } else if ($nestedDepth > $parentDepth + 1) {
-            // Tiefere Verschachtelung als 1 -> 
-            // das sollte nicht vorkommen in wohlgeformten Listen
-            // Aber wir behandeln es, indem wir intermediate Items erstellen oder
-            // das Item zum letzten Kind des Parents hinzufügen
-            // Für jetzt: einfach zum Parent hinzufügen
+            return;
+        }
+
+        if ($nestedDepth > $parentDepth + 1) {
+            $lastNestedChild = $this->findLastNestedListItemChild($parent);
+            if ($lastNestedChild !== null) {
+                $this->attachNestedItem($lastNestedChild, $nestedItem);
+                return;
+            }
+
             $parent->addChild($nestedItem);
         }
+    }
+
+    private function findLastNestedListItemChild(ListItemNode $parent): ?ListItemNode
+    {
+        $children = $parent->getChildren();
+        for ($i = count($children) - 1; $i >= 0; $i--) {
+            if ($children[$i] instanceof ListItemNode) {
+                return $children[$i];
+            }
+        }
+
+        return null;
     }
 }

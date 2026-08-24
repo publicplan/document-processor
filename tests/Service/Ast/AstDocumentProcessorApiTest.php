@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Publicplan\DocumentProcessor\Tests\Service\Ast;
 
 use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\IOFactory;
 use PHPUnit\Framework\TestCase;
 use Publicplan\DocumentProcessor\Model\ProcessedAstAndHtmlDocument;
 use Publicplan\DocumentProcessor\Model\ProcessedAstDocument;
@@ -142,6 +143,97 @@ class AstDocumentProcessorApiTest extends TestCase
         $paragraph = $result->ast['sections'][0]['paragraphs'][0];
         $this->assertSame('list', $paragraph['type']);
         $this->assertSame(0, $paragraph['items'][0]['depth']);
+    }
+
+    public function test_process_to_html_preserves_center_and_justify_alignment(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $centered = $section->addTextRun(['alignment' => 'center']);
+        $centered->addText('Zentriert');
+        $justified = $section->addTextRun(['alignment' => 'both']);
+        $justified->addText('Blocksatz');
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml('/test/file.docx', 'test.docx');
+
+        $this->assertStringContainsString('text-align: center;', $result->html);
+        $this->assertStringContainsString('text-align: justify;', $result->html);
+    }
+
+    public function test_process_to_html_renders_nested_list_items(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $top = $section->addListItemRun(0);
+        $top->addText('Top 1');
+        $nested1 = $section->addListItemRun(1);
+        $nested1->addText('Sub 1');
+        $nested2 = $section->addListItemRun(1);
+        $nested2->addText('Sub 2');
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml('/test/file.docx', 'test.docx');
+
+        $this->assertMatchesRegularExpression(
+            '/<li>Top 1\s*<(ul|ol)[^>]*>\s*<li>Sub 1<\/li>\s*<li>Sub 2<\/li>\s*<\/\1>\s*<\/li>/s',
+            $result->html
+        );
+    }
+
+    public function test_process_to_html_renders_table_borders_from_style_name(): void
+    {
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $phpWord->addTableStyle('Tabellenraster', [
+            'borderTopSize' => 4,
+            'borderTopColor' => '000000',
+            'borderRightSize' => 4,
+            'borderRightColor' => '000000',
+            'borderBottomSize' => 4,
+            'borderBottomColor' => '000000',
+            'borderLeftSize' => 4,
+            'borderLeftColor' => '000000',
+            'borderInsideHSize' => 4,
+            'borderInsideHColor' => '000000',
+            'borderInsideVSize' => 4,
+            'borderInsideVColor' => '000000',
+        ]);
+
+        $table = $section->addTable('Tabellenraster');
+        $table->addRow();
+        $table->addCell(2000)->addText('A1');
+        $table->addCell(2000)->addText('A2');
+
+        $filePath = tempnam(sys_get_temp_dir(), 'ast-table-style-');
+        if ($filePath === false) {
+            $this->fail('Temp file could not be created.');
+        }
+
+        $docxPath = $filePath . '.docx';
+        unlink($filePath);
+        IOFactory::createWriter($phpWord, 'Word2007')->save($docxPath);
+
+        try {
+            $processor = new AstDocumentProcessor(new DocumentLoader());
+            $result = $processor->processToHtml($docxPath, 'table-style.docx');
+
+            $this->assertStringContainsString('border-collapse: collapse;', $result->html);
+            $this->assertStringContainsString('border: 0.0264cm solid #000000;', $result->html);
+            $this->assertStringContainsString('<td style="border: 0.0264cm solid #000000;">', $result->html);
+        } finally {
+            @unlink($docxPath);
+        }
     }
 
     private function createProcessorWithSimpleDocument(): AstDocumentProcessor

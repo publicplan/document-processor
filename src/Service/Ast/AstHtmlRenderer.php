@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Service\Ast;
 
+use PhpOffice\PhpWord\SimpleType\Jc;
 use Publicplan\DocumentProcessor\Ast\Metadata\TrackChangeType;
 use Publicplan\DocumentProcessor\Ast\Node\AstNode;
 use Publicplan\DocumentProcessor\Ast\Node\BorderGroupNode;
@@ -30,6 +31,9 @@ use Publicplan\DocumentProcessor\Service\Converter\BorderStyleHelper;
 
 final class AstHtmlRenderer
 {
+    /** @var string[] */
+    private const BORDER_SIDES = ['top', 'right', 'bottom', 'left'];
+
     public function render(DocumentNode $document): string
     {
         $html = '';
@@ -109,6 +113,10 @@ final class AstHtmlRenderer
         }
 
         $styles = [];
+        $alignment = $this->mapParagraphAlignmentToCss($paragraph->getAlignment());
+        if ($alignment !== null) {
+            $styles[] = sprintf('text-align: %s;', $alignment);
+        }
         $styles[] = sprintf('margin-bottom: %scm;', $paragraph->getSpacingAfter() ?? 0);
         $styleAttr = sprintf(' style="%s"', implode(' ', $styles));
 
@@ -151,9 +159,17 @@ final class AstHtmlRenderer
 
     private function renderListItem(ListItemNode $item): string
     {
-        $content = $this->renderInlineNodes($item->getChildren());
-        if ($content === '') {
+        [$inlineChildren, $nestedItems] = $this->splitListItemChildren($item);
+
+        $content = $this->renderInlineNodes($inlineChildren);
+        $nestedLists = $this->renderNestedLists($nestedItems);
+
+        if ($content === '' && $nestedLists === '') {
             return '';
+        }
+
+        if ($nestedLists !== '') {
+            return sprintf("    <li>%s%s%s</li>%s", $content, PHP_EOL, $nestedLists, PHP_EOL);
         }
 
         return sprintf("    <li>%s</li>%s", $content, PHP_EOL);
@@ -186,19 +202,66 @@ final class AstHtmlRenderer
 
     private function renderTable(TableNode $table): string
     {
-        $html = sprintf('<table class="table jrvTable">%s', PHP_EOL);
-        foreach ($table->getRows() as $row) {
+        $rows = array_values(array_filter($table->getRows(), static fn (mixed $row): bool => $row instanceof TableRowNode));
+        $totalRows = count($rows);
+        $totalColumns = $this->countTableColumns($rows);
+
+        $tableBorderStyle = $this->extractTableBorderContextFromNode($table);
+        $tableStyles = [];
+        if ($this->hasAnyTableBorder($tableBorderStyle)) {
+            $tableStyles[] = 'border-collapse: collapse;';
+            $outerBorderStyles = $this->buildBorderCss($tableBorderStyle['outer'] ?? []);
+            if ($outerBorderStyles !== '') {
+                $tableStyles[] = $outerBorderStyles;
+            }
+        }
+
+        $tableStyleAttr = $tableStyles !== [] ? sprintf(' style="%s"', implode(' ', $tableStyles)) : '';
+        $html = sprintf('<table class="table jrvTable"%s>%s', $tableStyleAttr, PHP_EOL);
+
+        foreach ($rows as $rowIndex => $row) {
             if (!$row instanceof TableRowNode) {
                 continue;
             }
 
             $html .= '    <tr>' . PHP_EOL;
+            $columnIndex = 0;
             foreach ($row->getCells() as $cell) {
                 if (!$cell instanceof TableCellNode) {
                     continue;
                 }
 
-                $html .= '        <td>' . PHP_EOL;
+                $colSpan = max(1, (int)($cell->getColumnSpan() ?? 1));
+                $styles = [];
+
+                $cellStyle = $cell->getResolvedStyle();
+                $backgroundColor = is_array($cellStyle) && is_string($cellStyle['backgroundColor'] ?? null)
+                    ? BorderStyleHelper::formatCssHexColor($cellStyle['backgroundColor'])
+                    : null;
+                if ($backgroundColor !== null) {
+                    $styles[] = 'background-color: ' . $backgroundColor . ';';
+                }
+
+                $effectiveBorders = $this->resolveCellBorders(
+                    $cellStyle,
+                    $tableBorderStyle,
+                    $rowIndex,
+                    $totalRows,
+                    $columnIndex,
+                    max(0, $totalColumns - 1),
+                    $colSpan
+                );
+                $borderStyles = $this->buildBorderCss($effectiveBorders);
+                if ($borderStyles !== '') {
+                    $styles[] = $borderStyles;
+                }
+
+                $html .= sprintf(
+                    '        <td%s%s>%s',
+                    $colSpan > 1 ? ' colspan="' . $colSpan . '"' : '',
+                    $styles !== [] ? ' style="' . implode(' ', $styles) . '"' : '',
+                    PHP_EOL
+                );
                 foreach ($cell->getChildren() as $child) {
                     if ($child instanceof AstNode) {
                         $rendered = $this->renderBlockNode($child, false);
@@ -206,6 +269,7 @@ final class AstHtmlRenderer
                     }
                 }
                 $html .= '        </td>' . PHP_EOL;
+                $columnIndex += $colSpan;
             }
             $html .= '    </tr>' . PHP_EOL;
         }
@@ -454,6 +518,307 @@ final class AstHtmlRenderer
     {
         $value = $item->getRenderHints()->getHint($key);
         return is_int($value) ? $value : (is_numeric($value) ? (int)$value : null);
+    }
+
+    private function countTableColumns(array $rows): int
+    {
+        $maxColumns = 0;
+        foreach ($rows as $row) {
+            if (!$row instanceof TableRowNode) {
+                continue;
+            }
+
+            $rowColumns = 0;
+            foreach ($row->getCells() as $cell) {
+                if (!$cell instanceof TableCellNode) {
+                    continue;
+                }
+                $rowColumns += max(1, (int)($cell->getColumnSpan() ?? 1));
+            }
+
+            $maxColumns = max($maxColumns, $rowColumns);
+        }
+
+        return $maxColumns;
+    }
+
+    private function extractTableBorderContextFromNode(TableNode $table): ?array
+    {
+        $style = $table->getResolvedStyle();
+        if (!is_array($style)) {
+            return null;
+        }
+
+        $borders = $style['borders'] ?? null;
+        return is_array($borders) ? $borders : null;
+    }
+
+    private function hasAnyTableBorder(?array $tableBorderStyle): bool
+    {
+        if ($tableBorderStyle === null) {
+            return false;
+        }
+
+        foreach (self::BORDER_SIDES as $side) {
+            if ($this->isBorderDefined($tableBorderStyle['outer'][$side] ?? null)) {
+                return true;
+            }
+        }
+
+        return $this->isBorderDefined($tableBorderStyle['inside']['horizontal'] ?? null)
+            || $this->isBorderDefined($tableBorderStyle['inside']['vertical'] ?? null);
+    }
+
+    private function resolveCellBorders(
+        mixed $cellStyle,
+        ?array $tableBorderStyle,
+        int $rowIndex,
+        int $totalRows,
+        int $columnIndex,
+        int $lastColumnIndex,
+        int $colSpan
+    ): array {
+        $cellBorders = is_array($cellStyle) && is_array($cellStyle['borders'] ?? null) ? $cellStyle['borders'] : [];
+        $cellEnd = $columnIndex + $colSpan - 1;
+
+        $resolvedBorders = [];
+        foreach (self::BORDER_SIDES as $side) {
+            $border = is_array($cellBorders[$side] ?? null) ? $cellBorders[$side] : null;
+            if ($this->isBorderDefined($border)) {
+                $resolvedBorders[$side] = $border;
+                continue;
+            }
+
+            $resolvedBorders[$side] = $this->resolveTableFallbackBorder(
+                $tableBorderStyle,
+                $side,
+                $rowIndex,
+                $totalRows,
+                $columnIndex,
+                $cellEnd,
+                $lastColumnIndex
+            );
+        }
+
+        return $resolvedBorders;
+    }
+
+    private function resolveTableFallbackBorder(
+        ?array $tableBorderStyle,
+        string $side,
+        int $rowIndex,
+        int $totalRows,
+        int $cellStartColumn,
+        int $cellEndColumn,
+        int $lastColumnIndex
+    ): ?array {
+        if ($tableBorderStyle === null) {
+            return null;
+        }
+
+        $isFirstRow = $rowIndex === 0;
+        $isLastRow = $rowIndex === $totalRows - 1;
+        $isFirstCol = $cellStartColumn === 0;
+        $isLastCol = $cellEndColumn === $lastColumnIndex;
+
+        return match ($side) {
+            'top' => $isFirstRow ? ($tableBorderStyle['outer']['top'] ?? null) : ($tableBorderStyle['inside']['horizontal'] ?? null),
+            'bottom' => $isLastRow ? ($tableBorderStyle['outer']['bottom'] ?? null) : ($tableBorderStyle['inside']['horizontal'] ?? null),
+            'left' => $isFirstCol ? ($tableBorderStyle['outer']['left'] ?? null) : ($tableBorderStyle['inside']['vertical'] ?? null),
+            'right' => $isLastCol ? ($tableBorderStyle['outer']['right'] ?? null) : ($tableBorderStyle['inside']['vertical'] ?? null),
+            default => null,
+        };
+    }
+
+    private function isBorderDefined(?array $border): bool
+    {
+        if ($border === null) {
+            return false;
+        }
+
+        $size = $border['size'] ?? null;
+        if ($size === null || $size === '') {
+            return false;
+        }
+
+        return is_numeric($size) ? (float)$size > 0.0 : true;
+    }
+
+    private function buildBorderCss(array $borders): string
+    {
+        $normalizedBorders = [];
+        foreach (self::BORDER_SIDES as $side) {
+            $border = $borders[$side] ?? null;
+            if ($this->isBorderDefined($border)) {
+                $normalizedBorders[$side] = $this->normalizeBorderForCss($border);
+            }
+        }
+
+        if ($normalizedBorders === []) {
+            return '';
+        }
+
+        if (count($normalizedBorders) === 4 && $this->allTableBordersIdentical($normalizedBorders)) {
+            $border = $normalizedBorders['top'];
+            return sprintf(
+                'border: %scm %s%s;',
+                $this->formatLength($border['widthCm']),
+                $border['style'],
+                $border['color'] !== null ? ' ' . $border['color'] : ''
+            );
+        }
+
+        $styles = [];
+        foreach (self::BORDER_SIDES as $side) {
+            if (!isset($normalizedBorders[$side])) {
+                continue;
+            }
+
+            $border = $normalizedBorders[$side];
+            $styles[] = sprintf(
+                'border-%s: %scm %s%s;',
+                $side,
+                $this->formatLength($border['widthCm']),
+                $border['style'],
+                $border['color'] !== null ? ' ' . $border['color'] : ''
+            );
+        }
+
+        return implode(' ', $styles);
+    }
+
+    private function normalizeBorderForCss(array $border): array
+    {
+        $size = is_numeric($border['size'] ?? null) ? (float)$border['size'] : 0.0;
+        $widthCm = BorderStyleHelper::normalizeBorderWidthCm($this->convertBorderWidthToCm($size));
+
+        return [
+            'widthCm' => $widthCm,
+            'style' => $this->mapWordBorderStyleToCss(is_string($border['style'] ?? null) ? $border['style'] : null),
+            'color' => BorderStyleHelper::formatCssHexColor(is_string($border['color'] ?? null) ? $border['color'] : null),
+        ];
+    }
+
+    private function allTableBordersIdentical(array $normalizedBorders): bool
+    {
+        $first = $normalizedBorders['top'] ?? null;
+        if ($first === null) {
+            return false;
+        }
+
+        foreach (['right', 'bottom', 'left'] as $side) {
+            if (!isset($normalizedBorders[$side])) {
+                return false;
+            }
+
+            $candidate = $normalizedBorders[$side];
+            if ($candidate['widthCm'] !== $first['widthCm']
+                || $candidate['style'] !== $first['style']
+                || $candidate['color'] !== $first['color']) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function convertBorderWidthToCm(float $size): float
+    {
+        return $size * 2.54 / 576;
+    }
+
+    private function mapWordBorderStyleToCss(?string $wordStyle): string
+    {
+        return match ($wordStyle) {
+            'double' => 'double',
+            'dotted' => 'dotted',
+            'dashed' => 'dashed',
+            'none', 'nil' => 'none',
+            default => 'solid',
+        };
+    }
+
+    private function formatLength(float $length): string
+    {
+        return rtrim(rtrim(sprintf('%.4f', $length), '0'), '.');
+    }
+
+    private function splitListItemChildren(ListItemNode $item): array
+    {
+        $inlineChildren = [];
+        $nestedItems = [];
+
+        foreach ($item->getChildren() as $child) {
+            if ($child instanceof ListItemNode) {
+                $nestedItems[] = $child;
+                continue;
+            }
+
+            if ($child instanceof AstNode) {
+                $inlineChildren[] = $child;
+            }
+        }
+
+        return [$inlineChildren, $nestedItems];
+    }
+
+    private function renderNestedLists(array $nestedItems): string
+    {
+        if ($nestedItems === []) {
+            return '';
+        }
+
+        $html = '';
+        $group = [];
+
+        foreach ($nestedItems as $nestedItem) {
+            if (!$nestedItem instanceof ListItemNode) {
+                continue;
+            }
+
+            if ($group === []) {
+                $group[] = $nestedItem;
+                continue;
+            }
+
+            /** @var ListItemNode $lastInGroup */
+            $lastInGroup = $group[count($group) - 1];
+            if ($this->canGroupListItems($lastInGroup, $nestedItem)) {
+                $group[] = $nestedItem;
+                continue;
+            }
+
+            $html .= $this->renderList(new ListNode(items: $group));
+            $group = [$nestedItem];
+        }
+
+        if ($group !== []) {
+            $html .= $this->renderList(new ListNode(items: $group));
+        }
+
+        return $html;
+    }
+
+    private function canGroupListItems(ListItemNode $left, ListItemNode $right): bool
+    {
+        return $left->getNumId() === $right->getNumId()
+            && $left->getDepth() === $right->getDepth()
+            && $left->getNumFormat() === $right->getNumFormat();
+    }
+
+    private function mapParagraphAlignmentToCss(?string $alignment): ?string
+    {
+        if ($alignment === null || $alignment === '') {
+            return null;
+        }
+
+        return match ($alignment) {
+            Jc::CENTER => 'center',
+            Jc::BOTH => 'justify',
+            Jc::RIGHT, Jc::END => 'right',
+            Jc::LEFT, Jc::START => 'left',
+            default => null,
+        };
     }
 
     private function removeBorderStyles(string $html): string

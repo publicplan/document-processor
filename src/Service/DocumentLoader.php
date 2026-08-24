@@ -251,7 +251,7 @@ class DocumentLoader
 
             $styles = $xpath->query('//w:style[@w:type="paragraph"]');
             if ($styles === false) {
-                return;
+                $styles = [];
             }
 
             foreach ($styles as $styleNode) {
@@ -286,9 +286,126 @@ class DocumentLoader
 
                 Style::addParagraphStyle($styleId, $styleDefinition);
             }
+
+            $this->registerTableStyles($xpath);
         } finally {
             $zip->close();
         }
+    }
+
+    private function registerTableStyles(DOMXPath $xpath): void
+    {
+        $styles = $xpath->query('//w:style[@w:type="table"]');
+        if ($styles === false) {
+            return;
+        }
+
+        foreach ($styles as $styleNode) {
+            $styleId = trim((string)$xpath->evaluate('string(@w:styleId)', $styleNode));
+            if ($styleId === '' || Style::getStyle($styleId) !== null) {
+                continue;
+            }
+
+            $styleDefinition = $this->extractTableStyleDefinition($xpath, $styleNode);
+            if ($styleDefinition === []) {
+                continue;
+            }
+
+            Style::addTableStyle($styleId, $styleDefinition);
+        }
+    }
+
+    private function extractTableStyleDefinition(DOMXPath $xpath, \DOMNode $styleNode): array
+    {
+        $mapping = [
+            'top' => 'Top',
+            'right' => 'Right',
+            'bottom' => 'Bottom',
+            'left' => 'Left',
+        ];
+
+        $definition = [];
+        foreach ($mapping as $wordSide => $suffix) {
+            $border = $this->extractBorderNodeAttributes($xpath, sprintf('w:tblPr/w:tblBorders/w:%s', $wordSide), $styleNode);
+            if ($border === null) {
+                continue;
+            }
+
+            if ($border['size'] !== null) {
+                $definition['border' . $suffix . 'Size'] = $border['size'];
+            }
+            if ($border['color'] !== null) {
+                $definition['border' . $suffix . 'Color'] = $border['color'];
+            }
+            if ($border['style'] !== null) {
+                $definition['border' . $suffix . 'Style'] = $border['style'];
+            }
+        }
+
+        $insideH = $this->extractBorderNodeAttributes($xpath, 'w:tblPr/w:tblBorders/w:insideH', $styleNode);
+        if ($insideH !== null) {
+            if ($insideH['size'] !== null) {
+                $definition['borderInsideHSize'] = $insideH['size'];
+            }
+            if ($insideH['color'] !== null) {
+                $definition['borderInsideHColor'] = $insideH['color'];
+            }
+        }
+
+        $insideV = $this->extractBorderNodeAttributes($xpath, 'w:tblPr/w:tblBorders/w:insideV', $styleNode);
+        if ($insideV !== null) {
+            if ($insideV['size'] !== null) {
+                $definition['borderInsideVSize'] = $insideV['size'];
+            }
+            if ($insideV['color'] !== null) {
+                $definition['borderInsideVColor'] = $insideV['color'];
+            }
+        }
+
+        return $definition;
+    }
+
+    private function extractBorderNodeAttributes(DOMXPath $xpath, string $query, \DOMNode $contextNode): ?array
+    {
+        $borderNode = $xpath->query($query, $contextNode)?->item(0);
+        if (!$borderNode instanceof \DOMElement) {
+            return null;
+        }
+
+        $size = $this->readBorderSize($borderNode->getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'sz'));
+        $color = $this->readBorderColor($borderNode->getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'color'));
+        $style = $this->readBorderStyle($borderNode->getAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'val'));
+
+        return [
+            'size' => $size,
+            'color' => $color,
+            'style' => $style,
+        ];
+    }
+
+    private function readBorderSize(string $rawValue): ?int
+    {
+        if ($rawValue === '' || !is_numeric($rawValue)) {
+            return null;
+        }
+
+        return (int)$rawValue;
+    }
+
+    private function readBorderColor(string $rawValue): ?string
+    {
+        $normalized = trim($rawValue);
+        if ($normalized === '' || strcasecmp($normalized, 'auto') === 0) {
+            return null;
+        }
+
+        return strtoupper(ltrim($normalized, '#'));
+    }
+
+    private function readBorderStyle(string $rawValue): ?string
+    {
+        $normalized = trim($rawValue);
+        return $normalized === '' ? null : $normalized;
     }
 
     private function readTwips(mixed $rawValue): ?float

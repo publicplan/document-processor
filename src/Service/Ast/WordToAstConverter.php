@@ -15,6 +15,9 @@ use PhpOffice\PhpWord\Element\TextBreak as DocBreak;
 use PhpOffice\PhpWord\Element\TextBox as DocTextBox;
 use PhpOffice\PhpWord\Element\TextRun as DocTextRun;
 use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Style;
+use PhpOffice\PhpWord\Style\Cell as CellStyle;
+use PhpOffice\PhpWord\Style\Table as TableStyle;
 use Publicplan\DocumentProcessor\Ast\Metadata\ListFormat;
 use Publicplan\DocumentProcessor\Ast\Metadata\RenderHints;
 use Publicplan\DocumentProcessor\Ast\Metadata\TrackChangeType;
@@ -289,15 +292,20 @@ final class WordToAstConverter
 
     private function convertTable(DocTable $table, ConversionContext $context): TableNode
     {
-        $tableNode = new TableNode();
+        $tableStyle = $this->resolveTableStyle($table->getStyle());
+        $tableNode = new TableNode(
+            resolvedStyle: $tableStyle !== null ? ['borders' => $this->extractTableBorderContext($tableStyle)] : null
+        );
 
         foreach ($table->getRows() as $row) {
             $rowNode = new TableRowNode();
             foreach ($row->getCells() as $cell) {
+                $cellStyle = $cell->getStyle();
                 $cellNode = new TableCellNode(
-                    width: $cell->getWidth(),
-                    columnSpan: $cell->getStyle()?->getGridSpan(),
-                    rowSpan: is_numeric($cell->getStyle()?->getVMerge()) ? (int)$cell->getStyle()?->getVMerge() : null
+                    width: $this->nullableNumericToInt($cell->getWidth()),
+                    columnSpan: $this->nullableNumericToInt($cellStyle?->getGridSpan()),
+                    rowSpan: $this->nullableNumericToInt($cellStyle?->getVMerge()),
+                    resolvedStyle: $this->extractCellStyle($cellStyle)
                 );
 
                 foreach ($cell->getElements() as $cellElement) {
@@ -510,6 +518,129 @@ final class WordToAstConverter
         }
 
         return $this->twipsToCm($twips);
+    }
+
+    private function nullableNumericToInt(float|int|string|null $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (int)$value : null;
+    }
+
+    private function resolveTableStyle(null|string|TableStyle $tableStyle): ?TableStyle
+    {
+        if ($tableStyle instanceof TableStyle) {
+            return $tableStyle;
+        }
+
+        if (is_string($tableStyle)) {
+            $resolved = Style::getStyle($tableStyle);
+            if ($resolved instanceof TableStyle) {
+                return $resolved;
+            }
+        }
+
+        return null;
+    }
+
+    private function extractTableBorderContext(TableStyle $tableStyle): array
+    {
+        return [
+            'outer' => [
+                'top' => $this->readBorderFromStyle($tableStyle, 'top'),
+                'right' => $this->readBorderFromStyle($tableStyle, 'right'),
+                'bottom' => $this->readBorderFromStyle($tableStyle, 'bottom'),
+                'left' => $this->readBorderFromStyle($tableStyle, 'left'),
+            ],
+            'inside' => [
+                'horizontal' => [
+                    'size' => $tableStyle->getBorderInsideHSize(),
+                    'color' => $tableStyle->getBorderInsideHColor(),
+                    'style' => $this->resolveInsideBorderStyle($tableStyle, true),
+                ],
+                'vertical' => [
+                    'size' => $tableStyle->getBorderInsideVSize(),
+                    'color' => $tableStyle->getBorderInsideVColor(),
+                    'style' => $this->resolveInsideBorderStyle($tableStyle, false),
+                ],
+            ],
+        ];
+    }
+
+    private function extractCellStyle(?CellStyle $cellStyle): ?array
+    {
+        if ($cellStyle === null) {
+            return null;
+        }
+
+        $borders = [];
+        foreach (['top', 'right', 'bottom', 'left'] as $side) {
+            $border = $this->readBorderFromStyle($cellStyle, $side);
+            if ($this->isBorderDefined($border)) {
+                $borders[$side] = $border;
+            }
+        }
+
+        $backgroundColor = $cellStyle->getBgColor();
+        if ($backgroundColor === '' || $backgroundColor === null) {
+            $backgroundColor = null;
+        }
+
+        if ($borders === [] && $backgroundColor === null) {
+            return null;
+        }
+
+        return [
+            'borders' => $borders,
+            'backgroundColor' => $backgroundColor,
+        ];
+    }
+
+    private function resolveInsideBorderStyle(TableStyle $tableStyle, bool $horizontal): string
+    {
+        $sides = $horizontal ? ['top', 'bottom'] : ['left', 'right'];
+        foreach ($sides as $side) {
+            $style = $this->readBorderFromStyle($tableStyle, $side)['style'] ?? null;
+            if (is_string($style) && $style !== '') {
+                return $style;
+            }
+        }
+
+        return 'single';
+    }
+
+    private function readBorderFromStyle(object $style, string $side): ?array
+    {
+        $suffix = ucfirst($side);
+        $sizeGetter = 'getBorder' . $suffix . 'Size';
+        $colorGetter = 'getBorder' . $suffix . 'Color';
+        $styleGetter = 'getBorder' . $suffix . 'Style';
+
+        if (!method_exists($style, $sizeGetter) || !method_exists($style, $colorGetter) || !method_exists($style, $styleGetter)) {
+            return null;
+        }
+
+        return [
+            'size' => $style->{$sizeGetter}(),
+            'color' => $style->{$colorGetter}(),
+            'style' => $style->{$styleGetter}(),
+        ];
+    }
+
+    private function isBorderDefined(?array $border): bool
+    {
+        if ($border === null) {
+            return false;
+        }
+
+        $size = $border['size'] ?? null;
+        if ($size === null || $size === '') {
+            return false;
+        }
+
+        return is_numeric($size) ? (float)$size > 0.0 : true;
     }
 
     private function removeBorderStyles(string $html): string

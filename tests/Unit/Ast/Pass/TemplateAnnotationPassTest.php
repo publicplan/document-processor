@@ -65,4 +65,27 @@ class TemplateAnnotationPassTest extends TestCase
         $this->assertSame('malformed', $annotation['status']);
         $this->assertSame('{% wenn kunde', $annotation['raw']);
     }
+
+    public function test_it_marks_empty_or_uninterpretable_default_delimiter_tags_as_malformed(): void
+    {
+        $paragraph = new ParagraphNode(children: [
+            new TextNode('Prüfung {{ }} und {% Leerzeile löschen %}'),
+        ]);
+
+        $section = new SectionNode([$paragraph]);
+        $document = new DocumentNode([$section]);
+
+        $pass = new TemplateAnnotationPass(new GenericTemplateSyntaxProfile());
+        $pass->apply($document);
+
+        $annotations = $paragraph->getChildren()[0]->getSourceRef()?->toArray()['xmlAttributes']['templateAnnotations'] ?? [];
+
+        $this->assertCount(2, $annotations);
+        $this->assertSame('placeholder', $annotations[0]['kind']);
+        $this->assertSame('malformed', $annotations[0]['status']);
+        $this->assertSame('{{ }}', $annotations[0]['raw']);
+        $this->assertSame('control', $annotations[1]['kind']);
+        $this->assertSame('malformed', $annotations[1]['status']);
+        $this->assertSame('{% Leerzeile löschen %}', $annotations[1]['raw']);
+    }
 }

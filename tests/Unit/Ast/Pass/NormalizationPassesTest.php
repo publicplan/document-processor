@@ -261,4 +261,48 @@ class NormalizationPassesTest extends TestCase
             $this->assertEquals(1, $nested->getDepth());
         }
     }
+
+    public function test_list_normalization_pass_attaches_deep_nested_items_recursively(): void
+    {
+        $doc = new DocumentNode();
+        $section = new SectionNode();
+
+        $item1 = new ListItemNode(numId: 1, depth: 0, numFormat: ListFormat::Number);
+        $item1->addChild(new TextNode('Item 1'));
+
+        $nestedItem = new ListItemNode(numId: 1, depth: 1, numFormat: ListFormat::LetterLower);
+        $nestedItem->addChild(new TextNode('Item 1a'));
+
+        $deepNestedItem = new ListItemNode(numId: 1, depth: 2, numFormat: ListFormat::RomanLower);
+        $deepNestedItem->addChild(new TextNode('Item 1a.i'));
+
+        $section->addParagraph($item1);
+        $section->addParagraph($nestedItem);
+        $section->addParagraph($deepNestedItem);
+        $doc->addSection($section);
+
+        $pass = new ListNormalizationPass();
+        $result = $pass->apply($doc);
+
+        $paragraphs = $result->getSections()[0]->getParagraphs();
+        $this->assertCount(1, $paragraphs);
+        $this->assertInstanceOf(ListNode::class, $paragraphs[0]);
+
+        $topItem = $paragraphs[0]->getItems()[0];
+        $this->assertInstanceOf(ListItemNode::class, $topItem);
+
+        $firstLevelNestedItems = array_values(array_filter(
+            $topItem->getChildren(),
+            static fn ($child): bool => $child instanceof ListItemNode
+        ));
+        $this->assertCount(1, $firstLevelNestedItems);
+        $this->assertSame(1, $firstLevelNestedItems[0]->getDepth());
+
+        $secondLevelNestedItems = array_values(array_filter(
+            $firstLevelNestedItems[0]->getChildren(),
+            static fn ($child): bool => $child instanceof ListItemNode
+        ));
+        $this->assertCount(1, $secondLevelNestedItems);
+        $this->assertSame(2, $secondLevelNestedItems[0]->getDepth());
+    }
 }

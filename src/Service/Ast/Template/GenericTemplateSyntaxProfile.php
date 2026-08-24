@@ -53,6 +53,14 @@ final class GenericTemplateSyntaxProfile implements TemplateSyntaxProfile
                 ? $this->detectControlRole($inner)
                 : null;
 
+            if ($status === 'complete' && trim($inner) === '') {
+                $status = 'malformed';
+            }
+
+            if ($status === 'complete' && $candidate['kind'] === 'control' && $role === null) {
+                $status = 'malformed';
+            }
+
             $fragments[] = new DetectedTemplateFragment(
                 kind: $candidate['kind'],
                 status: $status,
