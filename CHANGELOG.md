@@ -5,10 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.0] - 2026-08-24
+## [Unreleased] – 2.0.0
 
 ### Added
-- **AST-Pipeline**: Interner `DocumentNode`-basierter AST als Zwischenschicht zwischen DOCX-Parsing und HTML-Rendering (ersetzt direkten Converter-Durchlauf)
+- **AST-Pipeline**: Interner `DocumentNode`-basierter AST als Zwischenschicht zwischen DOCX-Parsing und HTML-Rendering
 - **NormalizationPipeline** mit sieben expliziten Passes: `SpacerParagraphPass`, `ListStructurePass`, `ListNormalizationPass`, `TextCoalescingPass`, `TemplateAnnotationPass` u. a.
 - **Öffentliche AST-API** über `AstDocumentProcessor`:
   - `processToHtml()` – kompatibler HTML-Pfad (bisheriges Verhalten)
@@ -21,7 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GenericTemplateSyntaxProfile` erkennt `{{ }}`, `{% %}` und `#{ }` sowie Steuerungs-Tags (`wenn`, `sonst wenn`, `sonst`, `ende`)
   - Plugin-Schnittstelle `TemplateSyntaxProfile` für app-spezifische Dialekte
   - Fehlerhafte Fragmente werden als `malformed` annotiert, nicht repariert
-- **`ParagraphIndentHelper`**: Löst effektive Einrückung mit Prioritätskette auf (direkt > Style-Name > `basedOn`-Kette aus `styles.xml`)
 - `ListNormalizationPass` verschachtelt `ListItemNode`s korrekt nach Tiefe, auch bei fehlerhaft strukturierten Eingaben
 - `PublicAstSerializer` filtert interne Render-Metadaten (`renderHints`, `legacy_html*`, Converter-Interna) aus dem öffentlichen Contract
 
@@ -34,40 +33,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.0] - 2026-08-21
+## [1.9.0] - 2026-08-21
 
 ### Added
-- **`TextBoxElementConverter`**: neuer Converter für Word-Textrahmen (`<w:txbxContent>`) mit Border- und Farbunterstützung
 - **Spacer-Paragraphen-Handling**: Leere Absätze zwischen Listenpunkten gleicher `numId` werden nicht als HTML gerendert; ihr Spacing wird als `margin-bottom` auf das vorherige `<li>` übertragen, sodass zusammengehörige Listen nicht in separate `<ol>`/`<ul>` aufgeteilt werden
-- Optionale HTML-Fragment-Validierung mit Severity-Normalisierung in `DocumentProcessor`
-- Unterstützung für nicht akzeptierte Änderungen (`hasUnacceptedChanges`) in `DocumentProcessor` via `ParserError`
-
-### Fixed
-- **Einrückung aus Built-in-Styles** (`styles.xml`): Absatzeinrückung, die nur im Paragraph-Style (z. B. `Listenabsatz`) und nicht direkt am Absatz definiert ist, wird jetzt korrekt aufgelöst und als HTML-Einrückung ausgegeben
-- **wkhtmltopdf-Kompatibilität**: `&#32;` (numerisches Leerzeichen) durch `&nbsp;` ersetzt, damit leere Absätze und TextRuns im PDF nicht kollabieren
-
-### Changed
-- Border-Styling in `TextBoxElementConverter` und `TextRunElementConverter` vereinheitlicht
-- Border-Farbbehandlung in `BorderStyleHelper` konsolidiert
-- Font-Size-Handling in `ConversionContext` und abhängigen Convertern überarbeitet
-- Absatz-Ausrichtung in `ListElementConverter` und `TextRunElementConverter` konsistent gemacht
-- Tabellen-Border-Handling in `TableElementConverter` erweitert (diagonale Borders, Zellenrahmen-Kaskade)
-- Fortlaufende geordnete Listen über Absatzgrenzen hinweg (`start`-Attribut-Fortführung)
-- Gelöschte Inhalte (Track Changes) werden korrekt aus der HTML-Ausgabe ausgeblendet
-- Font-Scale-Attribut wird bei einzelnen Font-Gruppen auf Absatzebene gesetzt
 
 ---
 
-## [1.1.0] - 2026-03-12
+## [1.8.0] - 2026-08-21
+
+### Fixed
+- **Einrückung aus Built-in-Styles** (`styles.xml`): Absatzeinrückung, die nur im Paragraph-Style (z. B. `Listenabsatz`) und nicht direkt am Absatz definiert ist, wird jetzt korrekt aufgelöst (`ParagraphIndentHelper` mit Prioritätskette direkt > Style-Name > `basedOn`-Kette)
+- **wkhtmltopdf-Kompatibilität**: `&#32;` (numerisches Leerzeichen) durch `&nbsp;` ersetzt, damit leere Absätze und TextRuns im PDF nicht kollabieren
+
+---
+
+## [1.7.0] - 2026-08-21
 
 ### Added
-- **`TextBoxElementConverter`** (Grundstruktur): Converter für Word-Textrahmen mit Tests
+- Optionale HTML-Fragment-Validierung mit Severity-Normalisierung in `DocumentProcessor`
+
+### Changed
+- Font-Scale-Attribut wird bei einzelnen Font-Gruppen auf Absatzebene gesetzt statt auf Run-Ebene
+
+---
+
+## [1.6.0] - 2026-08-20
+
+### Added
+- Gelöschte Inhalte (Track Changes) werden korrekt aus der HTML-Ausgabe ausgeblendet
+
+---
+
+## [1.5.0] - 2026-08-20
+
+### Changed
+- Fortlaufende geordnete Listen über Absatzgrenzen hinweg (`start`-Attribut-Fortführung)
+- Tabellen-Border-Handling in `TableElementConverter` weiter ausgebaut (Zellenrahmen-Kaskade, diagonale Borders)
+
+---
+
+## [1.4.0] - 2026-08-20
+
+### Changed
+- Tabellen-Border-Handling in `TableElementConverter` grundlegend überarbeitet, Tests ergänzt
+
+---
+
+## [1.3.0] - 2026-08-20
+
+### Changed
+- Absatz-Ausrichtung in `ListElementConverter` und `TextRunElementConverter` konsistent gemacht
+
+---
+
+## [1.2.0] - 2026-08-19
+
+### Changed
+- Font-Size-Handling in `ConversionContext` und abhängigen Convertern überarbeitet
+
+---
+
+## [1.1.6] - 2026-08-19
+
+### Changed
+- Border-Farbbehandlung in `BorderStyleHelper` konsolidiert
+
+---
+
+## [1.1.5] - 2026-08-19
+
+### Changed
+- Border-Styling in `TextBoxElementConverter` und `TextRunElementConverter` vereinheitlicht
+
+---
+
+## [1.1.4] - 2026-08-10
+
+### Added
+- Unterstützung für nicht akzeptierte Änderungen (`hasUnacceptedChanges`) in `DocumentProcessor` via `ParserError`
+
+### Changed
+- `ParserError`-Konstanten aktualisiert
+
+---
+
+## [1.1.3] - 2026-03-12
+
+### Added
+- **`TextBoxElementConverter`**: Converter für Word-Textrahmen (`<w:txbxContent>`) mit Tests
+
+---
+
+## [1.1.2] - 2026-03-06
 
 ### Changed
 - Listenkonvertierungslogik in `doConvert()` / `convertWithSpacing()` extrahiert und wiederverwendbar gemacht
 - `ParserError`-Konstanten auf einzeilige, PSR-konforme Deklarationen vereinheitlicht
 - Typ-Assertion für `DocList` in `convert()` ergänzt (explizitere Fehlerdiagnose)
 - Code-Formatierung und PHPDoc-Kommentare über alle Klassen konsistent gemacht
+
+---
+
+## [1.1.1] - 2026-03-05
+
+### Changed
+- IDE-Dateien (`.idea/`) aus Repository entfernt, `.gitignore` um OS- und Editor-Dateien erweitert
 
 ---
 
