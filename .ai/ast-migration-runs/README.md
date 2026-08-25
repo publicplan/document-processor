@@ -44,6 +44,9 @@ Jeder Run arbeitet nach demselben Muster:
 | 06 | Oeffentliche AST API | Apps koennen AST stabil konsumieren |
 | 07 | Template Annotation | optionale Syntax-Erkennung ohne Evaluation |
 | 08 | App Adoption und Legacy-Rueckbau | kontrollierte Nutzung des AST ausserhalb der Lib |
+| 09 | Lib-Repo Abschluss und Enablement | Release und Dokumentation |
+| 10 | App-Repo Adoption und Legacy-Rueckbau | AST in Production einfahren |
+| 11 | Paragraph Formatting Styles | Spacing, Indent & Line Height im HTML |
 
 ## Verbindliche Leitplanken
 

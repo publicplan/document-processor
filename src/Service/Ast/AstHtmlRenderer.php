@@ -113,11 +113,35 @@ final class AstHtmlRenderer
         }
 
         $styles = [];
+        
         $alignment = $this->mapParagraphAlignmentToCss($paragraph->getAlignment());
         if ($alignment !== null) {
             $styles[] = sprintf('text-align: %s;', $alignment);
         }
-        $styles[] = sprintf('margin-bottom: %scm;', $paragraph->getSpacingAfter() ?? 0);
+
+        if ($paragraph->getSpacingBefore() !== null && $paragraph->getSpacingBefore() > 0) {
+            $styles[] = sprintf('margin-top: %scm;', $paragraph->getSpacingBefore());
+        }
+
+        $spacingAfter = $paragraph->getSpacingAfter() ?? 0;
+        $styles[] = sprintf('margin-bottom: %scm;', $spacingAfter);
+
+        if ($paragraph->getLineHeight() !== null && $paragraph->getLineHeight() > 0) {
+            $styles[] = sprintf('line-height: %s;', $paragraph->getLineHeight());
+        }
+
+        if ($paragraph->getIndentLeft() !== null && $paragraph->getIndentLeft() > 0) {
+            $styles[] = sprintf('margin-left: %scm;', $paragraph->getIndentLeft());
+        }
+
+        if ($paragraph->getIndentRight() !== null && $paragraph->getIndentRight() > 0) {
+            $styles[] = sprintf('margin-right: %scm;', $paragraph->getIndentRight());
+        }
+
+        if ($paragraph->getIndentFirstLine() !== null && $paragraph->getIndentFirstLine() !== 0) {
+            $styles[] = sprintf('text-indent: %scm;', $paragraph->getIndentFirstLine());
+        }
+
         $styleAttr = sprintf(' style="%s"', implode(' ', $styles));
 
         return sprintf('<p%s>%s</p>%s', $styleAttr, trim($text), PHP_EOL);
@@ -168,11 +192,20 @@ final class AstHtmlRenderer
             return '';
         }
 
+        $styleAttr = '';
+        $styles = [];
+
+        $liHtml = '<li';
+        if (!empty($styles)) {
+            $liHtml .= sprintf(' style="%s"', implode(' ', $styles));
+        }
+        $liHtml .= '>';
+
         if ($nestedLists !== '') {
-            return sprintf("    <li>%s%s%s</li>%s", $content, PHP_EOL, $nestedLists, PHP_EOL);
+            return sprintf("%s%s%s%s</li>%s", $liHtml, $content, PHP_EOL, $nestedLists, PHP_EOL);
         }
 
-        return sprintf("    <li>%s</li>%s", $content, PHP_EOL);
+        return sprintf("%s%s</li>%s", $liHtml, $content, PHP_EOL);
     }
 
     private function renderBorderGroup(BorderGroupNode $group): string

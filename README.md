@@ -136,6 +136,31 @@ Consuming applications should therefore:
 2. interpret `templateAnnotations` in the application layer
 3. migrate business logic away from HTML re-parsing toward AST-driven processing where useful
 
+### Paragraph Formatting Styles
+
+The AST HTML renderer fully supports paragraph formatting styles from DOCX:
+
+**Spacing:**
+- `margin-top`: From document `spacingBefore` (converted to centimeters)
+- `margin-bottom`: From document `spacingAfter` (converted to centimeters)
+
+**Indentation:**
+- `margin-left`: From `indentLeft` (centimeters)
+- `margin-right`: From `indentRight` (centimeters)
+- `text-indent`: From `indentFirstLine` (centimeters, supports negative values for hanging indents)
+
+**Line Height:**
+- `line-height`: Direct from document (unitless multiplier, e.g., 1.5 for 150%)
+
+All measurements are automatically converted from TWIPS to centimeters.
+
+Example HTML output:
+```html
+<p style="margin-top: 0.64cm; margin-bottom: 0.64cm; line-height: 1.5; margin-left: 1.27cm; text-indent: 0.64cm;">
+  Text with comprehensive paragraph formatting
+</p>
+```
+
 ## Framework Integration
 
 ### Symfony

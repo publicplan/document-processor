@@ -181,7 +181,7 @@ final class WordToAstConverter
                         indentFirstLine: $this->nullableTwipsToCm($element->getParagraphStyle()?->getIndentFirstLine()),
                         spacingBefore: $this->nullableTwipsToCm($element->getParagraphStyle()?->getSpaceBefore()),
                         spacingAfter: $this->nullableTwipsToCm($element->getParagraphStyle()?->getSpaceAfter()) ?? 0.0,
-                        lineHeight: null,
+                        lineHeight: $this->extractLineHeight($element->getParagraphStyle()),
                         resolvedStyle: $this->extractParagraphStyle($element->getParagraphStyle()),
                         renderHints: new RenderHints([
                         ])
@@ -518,6 +518,20 @@ final class WordToAstConverter
         }
 
         return $this->twipsToCm($twips);
+    }
+
+    private function extractLineHeight(?object $paragraphStyle): ?float
+    {
+        if ($paragraphStyle === null) {
+            return null;
+        }
+
+        $lineHeight = $paragraphStyle->getLineHeight();
+        if ($lineHeight === null) {
+            return null;
+        }
+
+        return (float)$lineHeight;
     }
 
     private function nullableNumericToInt(float|int|string|null $value): ?int

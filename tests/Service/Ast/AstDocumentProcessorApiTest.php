@@ -246,6 +246,117 @@ class AstDocumentProcessorApiTest extends TestCase
         }
     }
 
+    public function test_paragraph_spacing_before_renders_as_margin_top(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        
+        $textRun = $section->addTextRun();
+        $textRun->addText('Paragraph with spacing before');
+        $textRun->getParagraphStyle()->setSpaceBefore(360); // ≈ 0.64cm in TWIPS
+        
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml('/test/spacing.docx', 'spacing.docx');
+
+        $this->assertStringContainsString('margin-top: 0.64cm;', $result->html);
+    }
+
+    public function test_paragraph_line_height_renders_in_style(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        
+        $textRun = $section->addTextRun();
+        $textRun->addText('Paragraph with line height');
+        $textRun->getParagraphStyle()->setLineHeight(1.5);
+        
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml('/test/lineheight.docx', 'lineheight.docx');
+
+        $this->assertStringContainsString('line-height: 1.5;', $result->html);
+    }
+
+    public function test_paragraph_indent_left_renders_as_margin_left(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        
+        $textRun = $section->addTextRun();
+        $textRun->addText('Paragraph with left indent');
+        $textRun->getParagraphStyle()->setIndentLeft(720); // ≈ 1.27cm in TWIPS
+        
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml('/test/indent.docx', 'indent.docx');
+
+        $this->assertStringContainsString('margin-left: 1.27cm;', $result->html);
+    }
+
+    public function test_paragraph_indent_first_line_renders_as_text_indent(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        
+        $textRun = $section->addTextRun();
+        $textRun->addText('Paragraph with first line indent');
+        $textRun->getParagraphStyle()->setIndentFirstLine(360); // ≈ 0.64cm in TWIPS
+        
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml('/test/firstline.docx', 'firstline.docx');
+
+        $this->assertStringContainsString('text-indent: 0.64cm;', $result->html);
+    }
+
+    public function test_combined_paragraph_styles_render_all_properties(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        
+        $textRun = $section->addTextRun();
+        $textRun->addText('Paragraph with multiple styles');
+        $style = $textRun->getParagraphStyle();
+        $style->setSpaceBefore(360); // ≈ 0.64cm
+        $style->setSpaceAfter(360); // ≈ 0.64cm
+        $style->setLineHeight(1.5);
+        $style->setIndentLeft(720); // ≈ 1.27cm
+        $style->setIndentRight(360); // ≈ 0.64cm
+        $style->setIndentFirstLine(360); // ≈ 0.64cm
+        
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml('/test/combined.docx', 'combined.docx');
+
+        $this->assertStringContainsString('margin-top: 0.64cm;', $result->html);
+        $this->assertStringContainsString('margin-bottom: 0.64cm;', $result->html);
+        $this->assertStringContainsString('line-height: 1.5;', $result->html);
+        $this->assertStringContainsString('margin-left: 1.27cm;', $result->html);
+        $this->assertStringContainsString('margin-right: 0.64cm;', $result->html);
+        $this->assertStringContainsString('text-indent: 0.64cm;', $result->html);
+    }
+
     private function createProcessorWithSimpleDocument(): AstDocumentProcessor
     {
         $loader = $this->createMock(DocumentLoader::class);
