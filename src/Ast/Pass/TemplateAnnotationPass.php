@@ -245,6 +245,7 @@ final class TemplateAnnotationPass implements AstPass
             'role' => $fragment->role,
             'status' => $fragment->status,
             'raw' => $fragment->raw,
+            'isContinuation' => $fragment->startOffset < $token['start'],
             'sequenceRange' => [
                 'start' => $fragment->startOffset,
                 'end' => $fragment->endOffset,
