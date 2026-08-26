@@ -1320,7 +1320,13 @@ final class WordToAstConverter
 
             $value = $style->{$getter}();
             if ($value !== null && $value !== '') {
-                return $value;
+                // Handle TblWidth objects (returned by getTblInd())
+                if ($value instanceof \PhpOffice\PhpWord\ComplexType\TblWidth) {
+                    $value = $value->getValue();
+                }
+                if ($value !== null && $value !== '') {
+                    return $value;
+                }
             }
         }
 

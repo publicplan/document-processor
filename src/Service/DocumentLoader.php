@@ -414,10 +414,9 @@ class DocumentLoader
         if ($alignment !== '') {
             $definition['alignment'] = $alignment;
         }
-        $indent = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblInd/@w:w)', $styleNode));
-        if ($indent !== null) {
-            $definition['indent'] = $indent;
-        }
+        // NOTE: Table indent is handled via indentLeft in AST's resolvedLayout.
+        // Skipping direct float assignment to avoid PhpWord TblWidth type mismatch.
+        // The value is captured in WordToAstConverter::extractTableLayout() instead.
         $cellSpacing = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellSpacing/@w:w)', $styleNode));
         if ($cellSpacing !== null) {
             $definition['cellSpacing'] = $cellSpacing;
