@@ -73,7 +73,7 @@ $annotatedAst = $astProcessor->processToAst(
     new ProcessingOptions(templateSyntaxProfile: new GenericTemplateSyntaxProfile())
 );
 
-$astVersion = $astOnly->astVersion; // currently "1.3.0"
+$astVersion = $astOnly->astVersion; // currently "1.4.0"
 $ast = $astOnly->ast;               // public AST contract (no renderer internals)
 $htmlFromAstRoute = $astAndHtml->html;
 ```
@@ -168,7 +168,7 @@ For AST-driven renderers (for example Twig exports), list and table nodes now ex
 - `listItem.indent.{left,right,firstLine,hanging}`
 - `listItem.spacing.{before,after,line}`
 - `listItem.level.{indentLeft,indentHanging,tabStop,markerOffset}`
-- `listItem.resolvedLayout.marker.{format,text,start,suffix,justification,restart}`
+- `listItem.resolvedLayout.marker.{rawNumFmt,lvlText,lvlSuffix,lvlJc,start,justification,font}` (+ compatibility aliases: `format,text,suffix,markerFont,restart`)
 - `list.spacing.{before,after}` and `list.indent.left`
 - `table.indent.left`, `table.spacing.{before,after}`, `table.cellSpacing`, `table.layout`, `table.cellMargins`
 

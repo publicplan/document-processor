@@ -193,6 +193,17 @@ class DocumentLoaderTest extends TestCase
             $this->assertArrayHasKey('ChildP', $snapshot['styles']['paragraph']);
             $this->assertSame('BaseP', $snapshot['styles']['paragraph']['ChildP']['basedOn']);
             $this->assertArrayHasKey('numMap', $snapshot['numbering']);
+            $this->assertArrayHasKey('levels', $snapshot['numbering']);
+
+            $firstAbstractNum = reset($snapshot['numbering']['levels']);
+            $this->assertIsArray($firstAbstractNum);
+            $firstLevel = $firstAbstractNum['0'] ?? reset($firstAbstractNum);
+            $this->assertIsArray($firstLevel);
+            $this->assertArrayHasKey('rawNumFmt', $firstLevel);
+            $this->assertArrayHasKey('lvlText', $firstLevel);
+            $this->assertArrayHasKey('lvlSuffix', $firstLevel);
+            $this->assertArrayHasKey('lvlJc', $firstLevel);
+            $this->assertArrayHasKey('font', $firstLevel);
         } finally {
             unlink($tempFile);
         }

@@ -129,7 +129,11 @@ final class WordToAstConverter
                     $listItemNode = new ListItemNode(
                         numId: (int)($element->getStyle()?->getNumId() ?? 0),
                         depth: (int)$element->getDepth(),
-                        numFormat: $this->mapListFormat($listConfig->tag, $listConfig->type),
+                        numFormat: $this->mapListFormatFromNumbering(
+                            $numberingMetadata['rawNumFmt'] ?? null,
+                            $listConfig->tag,
+                            $listConfig->type
+                        ),
                         startNumeration: $numberingMetadata['start'],
                         children: $this->convertInlineElements($element->getElements(), $context),
                         alignment: $listParagraphLayout['alignment'],
@@ -501,6 +505,19 @@ final class WordToAstConverter
         };
     }
 
+    private function mapListFormatFromNumbering(?string $rawNumFmt, string $fallbackTag, ?string $fallbackType): ListFormat
+    {
+        return match ($rawNumFmt) {
+            'bullet' => ListFormat::Bullet,
+            'upperRoman' => ListFormat::Roman,
+            'lowerRoman' => ListFormat::RomanLower,
+            'upperLetter' => ListFormat::Letter,
+            'lowerLetter' => ListFormat::LetterLower,
+            'decimal' => ListFormat::Number,
+            default => $this->mapListFormat($fallbackTag, $fallbackType),
+        };
+    }
+
     /**
      * @return array{
      *   styleRef:?array<string, mixed>,
@@ -768,31 +785,156 @@ final class WordToAstConverter
 
         $snapshot = $this->getStyleSnapshot($context);
         $numMap = $snapshot['numbering']['numMap'] ?? [];
-        $abstractNumId = $numId !== null ? ($numMap[(string)$numId]['abstractNumId'] ?? null) : null;
-        $levelSnapshot = [];
-        if ($abstractNumId !== null) {
-            $levelSnapshot = $snapshot['numbering']['levels'][(string)$abstractNumId][(string)$depth] ?? [];
+        $numSnapshot = $numId !== null && isset($numMap[(string)$numId]) && is_array($numMap[(string)$numId])
+            ? $numMap[(string)$numId]
+            : [];
+        $abstractNumId = $numSnapshot['abstractNumId'] ?? null;
+
+        $levelOverrideSnapshot = [];
+        if (isset($numSnapshot['levelOverrides']) && is_array($numSnapshot['levelOverrides'])) {
+            $override = $numSnapshot['levelOverrides'][(string)$depth] ?? [];
+            $levelOverrideSnapshot = is_array($override) ? $override : [];
         }
 
-        $leftTwips = $levelSnapshot['left'] ?? $levelObject?->getLeft();
-        $hangingTwips = $levelSnapshot['hanging'] ?? $levelObject?->getHanging();
-        $tabTwips = $levelSnapshot['tabStop'] ?? $levelObject?->getTabPos();
+        $levelSnapshot = [];
+        if ($abstractNumId !== null) {
+            $snapshotLevel = $snapshot['numbering']['levels'][(string)$abstractNumId][(string)$depth] ?? [];
+            $levelSnapshot = is_array($snapshotLevel) ? $snapshotLevel : [];
+        }
+
+        if ($levelSnapshot === []) {
+            [$matchedAbstractNumId, $matchedLevelSnapshot] = $this->matchNumberingLevelSnapshot(
+                $snapshot,
+                $depth,
+                $levelObject
+            );
+            if ($matchedLevelSnapshot !== []) {
+                $levelSnapshot = $matchedLevelSnapshot;
+                $abstractNumId ??= $matchedAbstractNumId;
+            }
+        }
+        $effectiveLevelSnapshot = array_replace($levelSnapshot, $levelOverrideSnapshot);
+
+        $leftTwips = $effectiveLevelSnapshot['left'] ?? $levelObject?->getLeft();
+        $hangingTwips = $effectiveLevelSnapshot['hanging'] ?? $levelObject?->getHanging();
+        $tabTwips = $effectiveLevelSnapshot['tabStop'] ?? $levelObject?->getTabPos();
+        $rawNumFmt = is_string($effectiveLevelSnapshot['rawNumFmt'] ?? null)
+            ? $effectiveLevelSnapshot['rawNumFmt']
+            : (is_string($effectiveLevelSnapshot['format'] ?? null) ? $effectiveLevelSnapshot['format'] : $levelObject?->getFormat());
+        $lvlText = is_string($effectiveLevelSnapshot['lvlText'] ?? null)
+            ? $effectiveLevelSnapshot['lvlText']
+            : (is_string($effectiveLevelSnapshot['text'] ?? null) ? $effectiveLevelSnapshot['text'] : $levelObject?->getText());
+        $lvlSuffix = is_string($effectiveLevelSnapshot['lvlSuffix'] ?? null)
+            ? $effectiveLevelSnapshot['lvlSuffix']
+            : (is_string($effectiveLevelSnapshot['suffix'] ?? null) ? $effectiveLevelSnapshot['suffix'] : $levelObject?->getSuffix());
+        $lvlJc = is_string($effectiveLevelSnapshot['lvlJc'] ?? null)
+            ? $effectiveLevelSnapshot['lvlJc']
+            : (is_string($effectiveLevelSnapshot['alignment'] ?? null) ? $effectiveLevelSnapshot['alignment'] : $levelObject?->getAlignment());
+
+        $font = null;
+        if (isset($effectiveLevelSnapshot['font']) && is_array($effectiveLevelSnapshot['font'])) {
+            $font = $effectiveLevelSnapshot['font'];
+        }
 
         return [
             'numId' => $numId,
             'numStyleId' => is_string($styleName) && $styleName !== '' ? $styleName : null,
             'abstractNumId' => is_numeric($abstractNumId) ? (int)$abstractNumId : null,
             'level' => $depth,
-            'start' => $this->nullableNumericToInt($levelSnapshot['start'] ?? $levelObject?->getStart()),
-            'format' => is_string($levelSnapshot['format'] ?? null) ? $levelSnapshot['format'] : $levelObject?->getFormat(),
-            'text' => is_string($levelSnapshot['text'] ?? null) ? $levelSnapshot['text'] : $levelObject?->getText(),
-            'suffix' => is_string($levelSnapshot['suffix'] ?? null) ? $levelSnapshot['suffix'] : $levelObject?->getSuffix(),
-            'justification' => is_string($levelSnapshot['alignment'] ?? null) ? $levelSnapshot['alignment'] : $levelObject?->getAlignment(),
-            'restart' => $this->nullableNumericToInt($levelSnapshot['restart'] ?? $levelObject?->getRestart()),
+            'start' => $this->nullableNumericToInt($effectiveLevelSnapshot['start'] ?? $levelObject?->getStart()),
+            'format' => $rawNumFmt,
+            'text' => $lvlText,
+            'suffix' => $lvlSuffix,
+            'justification' => $lvlJc,
+            'rawNumFmt' => $rawNumFmt,
+            'lvlText' => $lvlText,
+            'lvlSuffix' => $lvlSuffix,
+            'lvlJc' => $lvlJc,
+            'markerFont' => $font,
+            'font' => $font,
+            'restart' => $this->nullableNumericToInt($effectiveLevelSnapshot['restart'] ?? $levelObject?->getRestart()),
             'indentLeft' => $this->nullableTwipsToCm(is_numeric($leftTwips) ? (float)$leftTwips : null),
             'indentHanging' => $this->nullableTwipsToCm(is_numeric($hangingTwips) ? (float)$hangingTwips : null),
             'tabStop' => $this->nullableTwipsToCm(is_numeric($tabTwips) ? (float)$tabTwips : null),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     * @return array{0:?int,1:array<string, mixed>}
+     */
+    private function matchNumberingLevelSnapshot(array $snapshot, int $depth, ?NumberingLevel $levelObject): array
+    {
+        $levelsByAbstract = $snapshot['numbering']['levels'] ?? [];
+        if (!is_array($levelsByAbstract)) {
+            return [null, []];
+        }
+
+        $candidates = [];
+        foreach ($levelsByAbstract as $abstractKey => $levels) {
+            if (!is_array($levels)) {
+                continue;
+            }
+
+            $candidate = $levels[(string)$depth] ?? null;
+            if (is_array($candidate)) {
+                $candidates[] = [
+                    'abstractNumId' => is_numeric($abstractKey) ? (int)$abstractKey : null,
+                    'level' => $candidate,
+                ];
+            }
+        }
+
+        if ($candidates === []) {
+            return [null, []];
+        }
+
+        if (count($candidates) === 1 || $levelObject === null) {
+            return [
+                $candidates[0]['abstractNumId'],
+                $candidates[0]['level'],
+            ];
+        }
+
+        $targetFormat = $levelObject->getFormat();
+        $targetText = $levelObject->getText();
+        $targetSuffix = $levelObject->getSuffix();
+        $targetStart = $this->nullableNumericToInt($levelObject->getStart());
+
+        $bestScore = -1;
+        $bestCandidate = [null, []];
+
+        foreach ($candidates as $candidate) {
+            $level = $candidate['level'];
+            $score = 0;
+
+            if (($level['format'] ?? null) === $targetFormat) {
+                $score += 2;
+            }
+            if (($level['text'] ?? null) === $targetText) {
+                $score += 2;
+            }
+            if (($level['suffix'] ?? null) === $targetSuffix) {
+                $score += 1;
+            }
+            if (($level['start'] ?? null) === $targetStart) {
+                $score += 1;
+            }
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestCandidate = [
+                    $candidate['abstractNumId'],
+                    $level,
+                ];
+            }
+        }
+
+        if ($bestScore <= 0) {
+            return [null, []];
+        }
+
+        return $bestCandidate;
     }
 
     /**
@@ -844,9 +986,17 @@ final class WordToAstConverter
             'value' => $numberingMetadata['format'] ?? null,
             'source' => $numberingMetadata['format'] !== null ? 'numberingLevel' : 'rendererDefault',
         ];
+        $paragraphProvenance['marker.rawNumFmt'] = [
+            'value' => $numberingMetadata['rawNumFmt'] ?? null,
+            'source' => $numberingMetadata['rawNumFmt'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
         $paragraphProvenance['marker.text'] = [
             'value' => $numberingMetadata['text'] ?? null,
             'source' => $numberingMetadata['text'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.lvlText'] = [
+            'value' => $numberingMetadata['lvlText'] ?? null,
+            'source' => $numberingMetadata['lvlText'] !== null ? 'numberingLevel' : 'rendererDefault',
         ];
         $paragraphProvenance['marker.start'] = [
             'value' => $numberingMetadata['start'] ?? null,
@@ -856,15 +1006,35 @@ final class WordToAstConverter
             'value' => $numberingMetadata['suffix'] ?? null,
             'source' => $numberingMetadata['suffix'] !== null ? 'numberingLevel' : 'rendererDefault',
         ];
+        $paragraphProvenance['marker.lvlSuffix'] = [
+            'value' => $numberingMetadata['lvlSuffix'] ?? null,
+            'source' => $numberingMetadata['lvlSuffix'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
         $paragraphProvenance['marker.justification'] = [
             'value' => $numberingMetadata['justification'] ?? null,
             'source' => $numberingMetadata['justification'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.lvlJc'] = [
+            'value' => $numberingMetadata['lvlJc'] ?? null,
+            'source' => $numberingMetadata['lvlJc'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.font'] = [
+            'value' => $numberingMetadata['font'] ?? null,
+            'source' => isset($numberingMetadata['font']) ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.markerFont'] = [
+            'value' => $numberingMetadata['markerFont'] ?? null,
+            'source' => isset($numberingMetadata['markerFont']) ? 'numberingLevel' : 'rendererDefault',
         ];
 
         return $paragraphProvenance;
     }
 
     /**
+     * Marker fields under resolvedLayout.marker are sourced from w:lvl in numbering.xml and
+     * exposed both in a structured form (rawNumFmt/lvlText/lvlSuffix/justification/font)
+     * and compatibility aliases (format/text/suffix).
+     *
      * @return array<string, mixed>
      */
     private function buildListResolvedLayout(array $paragraphLayout, array $levelLayout, array $numberingMetadata): array
@@ -889,11 +1059,17 @@ final class WordToAstConverter
                 'markerOffset' => $this->computeMarkerOffset($levelLayout['tabStop'], $levelLayout['indentLeft']),
             ],
             'marker' => [
+                'rawNumFmt' => $numberingMetadata['rawNumFmt'] ?? null,
+                'lvlText' => $numberingMetadata['lvlText'] ?? null,
+                'lvlSuffix' => $numberingMetadata['lvlSuffix'] ?? null,
+                'lvlJc' => $numberingMetadata['lvlJc'] ?? null,
                 'format' => $numberingMetadata['format'] ?? null,
                 'text' => $numberingMetadata['text'] ?? null,
                 'start' => $numberingMetadata['start'] ?? null,
                 'suffix' => $numberingMetadata['suffix'] ?? null,
                 'justification' => $numberingMetadata['justification'] ?? null,
+                'markerFont' => $numberingMetadata['markerFont'] ?? null,
+                'font' => $numberingMetadata['font'] ?? null,
                 'restart' => $numberingMetadata['restart'] ?? null,
             ],
         ];

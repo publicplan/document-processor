@@ -580,6 +580,7 @@ class DocumentLoader
                 $numbering['numMap'][(string)$numId] = [
                     'numId' => $numId,
                     'abstractNumId' => $this->readIntOrNull($xpath->evaluate('string(w:abstractNumId/@w:val)', $numNode)),
+                    'levelOverrides' => $this->extractLevelOverrides($xpath, $numNode),
                 ];
             }
         }
@@ -601,18 +602,7 @@ class DocumentLoader
                             continue;
                         }
 
-                        $levels[(string)$level] = [
-                            'level' => $level,
-                            'start' => $this->readIntOrNull($xpath->evaluate('string(w:start/@w:val)', $levelNode)),
-                            'format' => $this->readStringOrNull($xpath->evaluate('string(w:numFmt/@w:val)', $levelNode)),
-                            'text' => $this->readStringOrNull($xpath->evaluate('string(w:lvlText/@w:val)', $levelNode)),
-                            'suffix' => $this->readStringOrNull($xpath->evaluate('string(w:suff/@w:val)', $levelNode)),
-                            'alignment' => $this->readStringOrNull($xpath->evaluate('string(w:lvlJc/@w:val)', $levelNode)),
-                            'restart' => $this->readIntOrNull($xpath->evaluate('string(w:lvlRestart/@w:val)', $levelNode)),
-                            'left' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:left)', $levelNode)),
-                            'hanging' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:hanging)', $levelNode)),
-                            'tabStop' => $this->readTwips($xpath->evaluate('string(w:pPr/w:tabs/w:tab/@w:pos)', $levelNode)),
-                        ];
+                        $levels[(string)$level] = $this->extractNumberingLevelSnapshot($xpath, $levelNode, $level);
                     }
                 }
 
@@ -621,6 +611,112 @@ class DocumentLoader
         }
 
         return $numbering;
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function extractLevelOverrides(DOMXPath $xpath, \DOMNode $numNode): array
+    {
+        $overrides = [];
+        $overrideNodes = $xpath->query('w:lvlOverride', $numNode);
+
+        if ($overrideNodes === false) {
+            return $overrides;
+        }
+
+        foreach ($overrideNodes as $overrideNode) {
+            $level = $this->readIntOrNull($xpath->evaluate('string(@w:ilvl)', $overrideNode));
+            if ($level === null) {
+                continue;
+            }
+
+            $startOverride = $this->readIntOrNull($xpath->evaluate('string(w:startOverride/@w:val)', $overrideNode));
+            $levelNode = $xpath->query('w:lvl', $overrideNode)?->item(0);
+
+            if ($levelNode instanceof \DOMElement) {
+                $overrides[(string)$level] = $this->extractNumberingLevelSnapshot(
+                    $xpath,
+                    $levelNode,
+                    $level,
+                    $startOverride
+                );
+                continue;
+            }
+
+            $overrides[(string)$level] = ['start' => $startOverride];
+        }
+
+        return $overrides;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function extractNumberingLevelSnapshot(
+        DOMXPath $xpath,
+        \DOMElement $levelNode,
+        int $level,
+        ?int $startOverride = null
+    ): array {
+        $start = $this->readIntOrNull($xpath->evaluate('string(w:start/@w:val)', $levelNode));
+        $rawNumFmt = $this->readStringOrNull($xpath->evaluate('string(w:numFmt/@w:val)', $levelNode));
+        $lvlText = $this->readRawStringOrNull($xpath->evaluate('string(w:lvlText/@w:val)', $levelNode));
+        $lvlSuffix = $this->readStringOrNull($xpath->evaluate('string(w:suff/@w:val)', $levelNode));
+        $lvlJc = $this->readStringOrNull($xpath->evaluate('string(w:lvlJc/@w:val)', $levelNode));
+
+        return [
+            'level' => $level,
+            'start' => $startOverride ?? $start,
+            'format' => $rawNumFmt,
+            'text' => $lvlText,
+            'suffix' => $lvlSuffix,
+            'alignment' => $lvlJc,
+            'rawNumFmt' => $rawNumFmt,
+            'lvlText' => $lvlText,
+            'lvlSuffix' => $lvlSuffix,
+            'lvlJc' => $lvlJc,
+            'font' => $this->extractMarkerFontSnapshot($xpath, $levelNode),
+            'restart' => $this->readIntOrNull($xpath->evaluate('string(w:lvlRestart/@w:val)', $levelNode)),
+            'left' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:left)', $levelNode)),
+            'hanging' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:hanging)', $levelNode)),
+            'tabStop' => $this->readTwips($xpath->evaluate('string(w:pPr/w:tabs/w:tab/@w:pos)', $levelNode)),
+        ];
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function extractMarkerFontSnapshot(DOMXPath $xpath, \DOMElement $levelNode): ?array
+    {
+        $font = [
+            'ascii' => $this->readMarkerFontAttribute($xpath, $levelNode, 'ascii'),
+            'hAnsi' => $this->readMarkerFontAttribute($xpath, $levelNode, 'hAnsi'),
+            'eastAsia' => $this->readMarkerFontAttribute($xpath, $levelNode, 'eastAsia'),
+            'cs' => $this->readMarkerFontAttribute($xpath, $levelNode, 'cs'),
+            'hint' => $this->readMarkerFontAttribute($xpath, $levelNode, 'hint'),
+        ];
+
+        $font = array_filter(
+            $font,
+            static fn (?string $value): bool => $value !== null
+        );
+
+        return $font === [] ? null : $font;
+    }
+
+    private function readMarkerFontAttribute(DOMXPath $xpath, \DOMElement $levelNode, string $attributeName): ?string
+    {
+        $valueWithNamespace = $this->readStringOrNull(
+            $xpath->evaluate('string(w:rPr/w:rFonts/@w:' . $attributeName . ')', $levelNode)
+        );
+        if ($valueWithNamespace !== null) {
+            return $valueWithNamespace;
+        }
+
+        return $this->readStringOrNull(
+            $xpath->evaluate('string(w:rPr/w:rFonts/@' . $attributeName . ')', $levelNode)
+        );
     }
 
     private function readIntOrNull(mixed $rawValue): ?int
@@ -640,6 +736,15 @@ class DocumentLoader
 
         $value = trim($rawValue);
         return $value === '' ? null : $value;
+    }
+
+    private function readRawStringOrNull(mixed $rawValue): ?string
+    {
+        if (!is_string($rawValue) || $rawValue === '') {
+            return null;
+        }
+
+        return $rawValue;
     }
 
     private function extractBorderNodeAttributes(DOMXPath $xpath, string $query, \DOMNode $contextNode): ?array
