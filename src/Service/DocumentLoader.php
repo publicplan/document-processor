@@ -7,7 +7,6 @@ namespace Publicplan\DocumentProcessor\Service;
 use Exception;
 use DOMDocument;
 use DOMXPath;
-use PhpOffice\PhpWord\Settings;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Style;
@@ -19,6 +18,8 @@ use ZipArchive;
  */
 class DocumentLoader
 {
+    private const float FALLBACK_BASE_FONT_SIZE_PT = 12.0;
+
     public function __construct()
     {
     }
@@ -216,14 +217,104 @@ class DocumentLoader
     public function loadWithDocumentMetadata(
         string $filePath,
         ?bool &$hasChanges = null,
-        ?float &$defaultFontSize = null
+        ?float &$defaultFontSize = null,
+        ?string &$defaultFontSizeSource = null,
+        ?array &$defaultFontSizeRaw = null
     ): PhpWord
     {
         $doc        = $this->load($filePath);
         $hasChanges = $this->hasUnacceptedChanges($filePath);
-        $defaultFontSize = $this->extractDocumentDefaultFontSize($filePath) ?? (float)Settings::DEFAULT_FONT_SIZE;
+        $fontMetadata = $this->extractDocumentBaseFontSizeMetadata($filePath);
+        $defaultFontSize = (float)($fontMetadata['sizePt'] ?? self::FALLBACK_BASE_FONT_SIZE_PT);
+        $defaultFontSizeSource = is_string($fontMetadata['source'] ?? null)
+            ? $fontMetadata['source']
+            : 'fallback';
+        $defaultFontSizeRaw = is_array($fontMetadata['raw'] ?? null)
+            ? $fontMetadata['raw']
+            : null;
 
         return $doc;
+    }
+
+    /**
+     * Ermittelt die kanonische Basis-Schriftgröße aus DOCX mit deterministischer Prioritätskette.
+     *
+     * Priorität:
+     * 1) docDefaults/rPrDefault/rPr/sz (sekundär szCs)
+     * 2) Normal-/primärer Body-Paragraph-Style inkl. basedOn-Auflösung
+     * 3) häufigste Body-Run-Schriftgröße (Tabellen und TOC ausgenommen)
+     * 4) Fallback 12pt
+     *
+     * @return array{sizePt:float, source:string, raw:array<string, mixed>}
+     * @throws DocumentLoadException
+     */
+    public function extractDocumentBaseFontSizeMetadata(string $filePath): array
+    {
+        $zip = new ZipArchive();
+
+        if ($zip->open($filePath) !== true) {
+            throw new DocumentLoadException(
+                'Konnte die Datei nicht öffnen',
+                $filePath,
+                'ZIP-Archiv konnte nicht geöffnet werden'
+            );
+        }
+
+        try {
+            $raw = [];
+            $stylesCatalog = null;
+
+            $stylesXml = $zip->getFromName('word/styles.xml');
+            if (is_string($stylesXml) && $stylesXml !== '') {
+                $stylesXPath = $this->createWordXPath($stylesXml);
+                if ($stylesXPath !== null) {
+                    $stylesCatalog = $this->extractParagraphStyleFontCatalog($stylesXPath);
+                    $raw['docDefaults'] = [
+                        'wSzHalfPoints' => $stylesCatalog['docDefaultsSzHalfPoints'],
+                        'wSzCsHalfPoints' => $stylesCatalog['docDefaultsSzCsHalfPoints'],
+                    ];
+
+                    if ($stylesCatalog['docDefaultsHalfPoints'] !== null) {
+                        return [
+                            'sizePt' => $this->halfPointsToPoints($stylesCatalog['docDefaultsHalfPoints']),
+                            'source' => 'docDefaults',
+                            'raw' => $raw,
+                        ];
+                    }
+
+                    $styleResult = $this->resolvePrimaryBodyStyleFontSize($stylesCatalog);
+                    if ($styleResult !== null) {
+                        $raw['style'] = $styleResult['raw'];
+                        return [
+                            'sizePt' => $this->halfPointsToPoints($styleResult['halfPoints']),
+                            'source' => $styleResult['source'],
+                            'raw' => $raw,
+                        ];
+                    }
+                }
+            }
+
+            $documentXml = $zip->getFromName('word/document.xml');
+            if (is_string($documentXml) && $documentXml !== '') {
+                $bodyResult = $this->extractMostFrequentBodyRunFontSize($documentXml, $stylesCatalog);
+                if ($bodyResult !== null) {
+                    $raw['bodyRuns'] = $bodyResult['raw'];
+                    return [
+                        'sizePt' => $this->halfPointsToPoints($bodyResult['halfPoints']),
+                        'source' => 'bodyRuns',
+                        'raw' => $raw,
+                    ];
+                }
+            }
+
+            return [
+                'sizePt' => self::FALLBACK_BASE_FONT_SIZE_PT,
+                'source' => 'fallback',
+                'raw' => $raw,
+            ];
+        } finally {
+            $zip->close();
+        }
     }
 
     /**
@@ -250,23 +341,14 @@ class DocumentLoader
                 return null;
             }
 
-            $document = new \DOMDocument();
-            $previous = libxml_use_internal_errors(true);
-            try {
-                if (!$document->loadXML($stylesXml)) {
-                    throw new DocumentLoadException(
-                        'Styles konnten nicht gelesen werden',
-                        $filePath,
-                        'styles.xml enthält ungültiges XML'
-                    );
-                }
-            } finally {
-                libxml_clear_errors();
-                libxml_use_internal_errors($previous);
+            $xpath = $this->createWordXPath($stylesXml);
+            if ($xpath === null) {
+                throw new DocumentLoadException(
+                    'Styles konnten nicht gelesen werden',
+                    $filePath,
+                    'styles.xml enthält ungültiges XML'
+                );
             }
-
-            $xpath = new \DOMXPath($document);
-            $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
 
             $value = $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:docDefaults/w:rPrDefault/w:rPr/w:sz/@w:val')
                 ?? $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:docDefaults/w:rPrDefault/w:rPr/w:szCs/@w:val');
@@ -277,14 +359,337 @@ class DocumentLoader
         }
     }
 
-    private function readDocDefaultFontSizeHalfPoints(\DOMXPath $xpath, string $query): ?float
+    private function readDocDefaultFontSizeHalfPoints(\DOMXPath $xpath, string $query, ?\DOMNode $contextNode = null): ?float
     {
-        $value = $xpath->evaluate("string($query)");
+        $value = $xpath->evaluate("string($query)", $contextNode);
         if (!is_string($value) || $value === '' || !is_numeric($value)) {
             return null;
         }
 
         return (float)$value;
+    }
+
+    private function createWordXPath(string $xml): ?DOMXPath
+    {
+        $document = new DOMDocument();
+        $previous = libxml_use_internal_errors(true);
+        try {
+            if (!$document->loadXML($xml)) {
+                return null;
+            }
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+
+        $xpath = new DOMXPath($document);
+        $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+        return $xpath;
+    }
+
+    /**
+     * @return array{
+     *   styles: array<string, array{
+     *     styleId:string,
+     *     styleName:?string,
+     *     basedOn:?string,
+     *     isDefault:bool,
+     *     fontSizeHalfPoints:?float,
+     *     fontSizeValuePath:?string
+     *   }>,
+     *   normalStyleIds: string[],
+     *   defaultStyleId:?string,
+     *   docDefaultsHalfPoints:?float,
+     *   docDefaultsSzHalfPoints:?float,
+     *   docDefaultsSzCsHalfPoints:?float
+     * }
+     */
+    private function extractParagraphStyleFontCatalog(DOMXPath $xpath): array
+    {
+        $styles = [];
+        $normalStyleIds = [];
+        $defaultStyleId = null;
+
+        $docDefaultsSz = $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:docDefaults/w:rPrDefault/w:rPr/w:sz/@w:val');
+        $docDefaultsSzCs = $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:docDefaults/w:rPrDefault/w:rPr/w:szCs/@w:val');
+        $docDefaults = $docDefaultsSz ?? $docDefaultsSzCs;
+
+        $styleNodes = $xpath->query('//w:style[@w:type="paragraph"]');
+        if ($styleNodes !== false) {
+            foreach ($styleNodes as $styleNode) {
+                $styleId = trim((string)$xpath->evaluate('string(@w:styleId)', $styleNode));
+                if ($styleId === '') {
+                    continue;
+                }
+
+                $styleName = $this->readStringOrNull($xpath->evaluate('string(w:name/@w:val)', $styleNode));
+                $basedOn = $this->readStringOrNull($xpath->evaluate('string(w:basedOn/@w:val)', $styleNode));
+                $isDefault = trim((string)$xpath->evaluate('string(@w:default)', $styleNode)) === '1';
+
+                $fontSizeFromSz = $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:rPr/w:sz/@w:val', $styleNode);
+                $fontSizeFromSzCs = $this->readDocDefaultFontSizeHalfPoints($xpath, 'w:rPr/w:szCs/@w:val', $styleNode);
+                $fontSize = $fontSizeFromSz ?? $fontSizeFromSzCs;
+                $fontSizePath = $fontSizeFromSz !== null ? 'w:sz' : ($fontSizeFromSzCs !== null ? 'w:szCs' : null);
+
+                $styles[$styleId] = [
+                    'styleId' => $styleId,
+                    'styleName' => $styleName,
+                    'basedOn' => $basedOn,
+                    'isDefault' => $isDefault,
+                    'fontSizeHalfPoints' => $fontSize,
+                    'fontSizeValuePath' => $fontSizePath,
+                ];
+
+                if ($this->isNormalParagraphStyle($styleId, $styleName)) {
+                    $normalStyleIds[] = $styleId;
+                }
+                if ($isDefault && $defaultStyleId === null) {
+                    $defaultStyleId = $styleId;
+                }
+            }
+        }
+
+        return [
+            'styles' => $styles,
+            'normalStyleIds' => array_values(array_unique($normalStyleIds)),
+            'defaultStyleId' => $defaultStyleId,
+            'docDefaultsHalfPoints' => $docDefaults,
+            'docDefaultsSzHalfPoints' => $docDefaultsSz,
+            'docDefaultsSzCsHalfPoints' => $docDefaultsSzCs,
+        ];
+    }
+
+    private function isNormalParagraphStyle(string $styleId, ?string $styleName): bool
+    {
+        $normalizedId = strtolower(trim($styleId));
+        if (in_array($normalizedId, ['normal', 'standard'], true)) {
+            return true;
+        }
+
+        if ($styleName === null) {
+            return false;
+        }
+
+        return in_array(strtolower(trim($styleName)), ['normal', 'standard'], true);
+    }
+
+    /**
+     * @param array{
+     *   styles: array<string, array{
+     *     styleId:string,
+     *     styleName:?string,
+     *     basedOn:?string,
+     *     isDefault:bool,
+     *     fontSizeHalfPoints:?float,
+     *     fontSizeValuePath:?string
+     *   }>,
+     *   normalStyleIds:string[],
+     *   defaultStyleId:?string
+     * } $catalog
+     * @return array{halfPoints:float, source:string, raw:array<string, mixed>}|null
+     */
+    private function resolvePrimaryBodyStyleFontSize(array $catalog): ?array
+    {
+        $styles = $catalog['styles'] ?? [];
+        if ($styles === []) {
+            return null;
+        }
+
+        $candidates = $catalog['normalStyleIds'] ?? [];
+        $defaultStyleId = $catalog['defaultStyleId'] ?? null;
+        if (is_string($defaultStyleId) && $defaultStyleId !== '') {
+            $candidates[] = $defaultStyleId;
+        }
+        $candidates = array_values(array_unique($candidates));
+
+        foreach ($candidates as $candidateStyleId) {
+            if (!isset($styles[$candidateStyleId])) {
+                continue;
+            }
+
+            $resolution = $this->resolveParagraphStyleFontSizeFromChain($candidateStyleId, $styles);
+            if ($resolution === null) {
+                continue;
+            }
+
+            $source = ($resolution['resolvedStyleId'] === $candidateStyleId && $this->isNormalParagraphStyle(
+                $candidateStyleId,
+                $styles[$candidateStyleId]['styleName'] ?? null
+            )) ? 'normalStyle' : 'styleChain';
+
+            return [
+                'halfPoints' => $resolution['halfPoints'],
+                'source' => $source,
+                'raw' => [
+                    'candidateStyleId' => $candidateStyleId,
+                    'resolvedStyleId' => $resolution['resolvedStyleId'],
+                    'resolvedValuePath' => $resolution['valuePath'],
+                    'styleChain' => $resolution['chain'],
+                ],
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, array{
+     *   styleId:string,
+     *   styleName:?string,
+     *   basedOn:?string,
+     *   isDefault:bool,
+     *   fontSizeHalfPoints:?float,
+     *   fontSizeValuePath:?string
+     * }> $styles
+     * @return array{
+     *   halfPoints:float,
+     *   resolvedStyleId:string,
+     *   valuePath:string,
+     *   chain:string[]
+     * }|null
+     */
+    private function resolveParagraphStyleFontSizeFromChain(string $styleId, array $styles): ?array
+    {
+        $visited = [];
+        $chain = [];
+        $currentStyleId = $styleId;
+
+        while ($currentStyleId !== '' && !isset($visited[$currentStyleId]) && isset($styles[$currentStyleId])) {
+            $visited[$currentStyleId] = true;
+            $chain[] = $currentStyleId;
+            $style = $styles[$currentStyleId];
+
+            if (is_numeric($style['fontSizeHalfPoints'])) {
+                return [
+                    'halfPoints' => (float)$style['fontSizeHalfPoints'],
+                    'resolvedStyleId' => $currentStyleId,
+                    'valuePath' => (string)($style['fontSizeValuePath'] ?? 'w:sz'),
+                    'chain' => $chain,
+                ];
+            }
+
+            $next = $style['basedOn'] ?? null;
+            if (!is_string($next) || $next === '') {
+                break;
+            }
+
+            $currentStyleId = $next;
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array<string, mixed>|null $stylesCatalog
+     * @return array{halfPoints:float, raw:array<string, mixed>}|null
+     */
+    private function extractMostFrequentBodyRunFontSize(string $documentXml, ?array $stylesCatalog): ?array
+    {
+        $documentXPath = $this->createWordXPath($documentXml);
+        if ($documentXPath === null) {
+            return null;
+        }
+
+        $paragraphNodes = $documentXPath->query('/w:document/w:body/w:p[not(ancestor::w:tbl)]');
+        if ($paragraphNodes === false) {
+            return null;
+        }
+
+        $countsByHalfPoints = [];
+        foreach ($paragraphNodes as $paragraphNode) {
+            if ($this->isTocParagraph($documentXPath, $paragraphNode, $stylesCatalog)) {
+                continue;
+            }
+
+            $runNodes = $documentXPath->query('w:r', $paragraphNode);
+            if ($runNodes === false) {
+                continue;
+            }
+
+            foreach ($runNodes as $runNode) {
+                $halfPoints = $this->readDocDefaultFontSizeHalfPoints($documentXPath, 'w:rPr/w:sz/@w:val', $runNode)
+                    ?? $this->readDocDefaultFontSizeHalfPoints($documentXPath, 'w:rPr/w:szCs/@w:val', $runNode);
+                if ($halfPoints === null || $halfPoints <= 0) {
+                    continue;
+                }
+
+                $key = (string)$halfPoints;
+                $countsByHalfPoints[$key] = ($countsByHalfPoints[$key] ?? 0) + 1;
+            }
+        }
+
+        if ($countsByHalfPoints === []) {
+            return null;
+        }
+
+        $maxCount = max($countsByHalfPoints);
+        $candidateSizes = [];
+        foreach ($countsByHalfPoints as $halfPointsKey => $count) {
+            if ($count === $maxCount && is_numeric($halfPointsKey)) {
+                $candidateSizes[] = (float)$halfPointsKey;
+            }
+        }
+
+        if ($candidateSizes === []) {
+            return null;
+        }
+
+        rsort($candidateSizes, SORT_NUMERIC);
+        $selectedHalfPoints = $candidateSizes[0];
+
+        return [
+            'halfPoints' => $selectedHalfPoints,
+            'raw' => [
+                'countsByHalfPoints' => $countsByHalfPoints,
+                'selectedHalfPoints' => $selectedHalfPoints,
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $stylesCatalog
+     */
+    private function isTocParagraph(DOMXPath $xpath, \DOMNode $paragraphNode, ?array $stylesCatalog): bool
+    {
+        $fieldInstruction = strtolower(trim((string)$xpath->evaluate('string(.//w:fldSimple/@w:instr)', $paragraphNode)));
+        $fieldInstructionText = strtolower(trim((string)$xpath->evaluate('string(.//w:instrText)', $paragraphNode)));
+        if (str_contains($fieldInstruction, 'toc') || str_contains($fieldInstructionText, 'toc')) {
+            return true;
+        }
+
+        $paragraphStyleId = trim((string)$xpath->evaluate('string(w:pPr/w:pStyle/@w:val)', $paragraphNode));
+        if ($paragraphStyleId === '') {
+            return false;
+        }
+
+        $styles = is_array($stylesCatalog['styles'] ?? null) ? $stylesCatalog['styles'] : [];
+        if (!isset($styles[$paragraphStyleId])) {
+            return str_starts_with(strtolower($paragraphStyleId), 'toc');
+        }
+
+        $visited = [];
+        $current = $paragraphStyleId;
+        while ($current !== '' && !isset($visited[$current]) && isset($styles[$current])) {
+            $visited[$current] = true;
+            $style = $styles[$current];
+            $styleName = strtolower(trim((string)($style['styleName'] ?? '')));
+            if (str_starts_with(strtolower($current), 'toc') || str_contains($styleName, 'toc')) {
+                return true;
+            }
+
+            $next = $style['basedOn'] ?? null;
+            if (!is_string($next) || $next === '') {
+                break;
+            }
+            $current = $next;
+        }
+
+        return false;
+    }
+
+    private function halfPointsToPoints(float $halfPoints): float
+    {
+        return round($halfPoints / 2.0, 2);
     }
 
     private function registerParagraphStylesFromStylesXml(string $filePath): void

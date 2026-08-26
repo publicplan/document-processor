@@ -240,7 +240,7 @@ class DocumentProcessorParityTest extends TestCase
         /** @var DocumentLoader&MockObject $loader */
         $loader = $this->createMock(DocumentLoader::class);
         $loader->method('loadWithDocumentMetadata')
-            ->willReturnCallback(static function () use ($documentFactory): PhpWord {
+            ->willReturnCallback(static function (...$args) use ($documentFactory): PhpWord {
                 return $documentFactory();
             });
 
@@ -252,7 +252,7 @@ class DocumentProcessorParityTest extends TestCase
         /** @var DocumentLoader&MockObject $loader */
         $loader = $this->createMock(DocumentLoader::class);
         $loader->method('loadWithDocumentMetadata')
-            ->willReturnCallback(static function () use ($documentFactory): PhpWord {
+            ->willReturnCallback(static function (...$args) use ($documentFactory): PhpWord {
                 return $documentFactory();
             });
 

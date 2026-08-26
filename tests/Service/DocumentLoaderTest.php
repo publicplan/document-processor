@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Publicplan\DocumentProcessor\Tests\Service;
 
+use DOMDocument;
+use DOMXPath;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Style;
@@ -129,6 +131,174 @@ class DocumentLoaderTest extends TestCase
         }
     }
 
+    public function testExtractDocumentBaseFontSizeMetadataUsesDocDefaults(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $phpWord->setDefaultFontSize(12);
+        $phpWord->addSection()->addText('Test');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempFile);
+
+        try {
+            $metadata = $this->loader->extractDocumentBaseFontSizeMetadata($tempFile);
+
+            $this->assertSame(12.0, $metadata['sizePt']);
+            $this->assertSame('docDefaults', $metadata['source']);
+        } finally {
+            unlink($tempFile);
+        }
+    }
+
+    public function testExtractDocumentBaseFontSizeMetadataFallsBackToNormalStyle(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $phpWord->addSection()->addText('Test');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempFile);
+
+        $this->mutateDocxXmlPart($tempFile, 'word/styles.xml', function (DOMDocument $document, DOMXPath $xpath): void {
+            foreach ($xpath->query('/w:styles/w:docDefaults') ?: [] as $node) {
+                $node->parentNode?->removeChild($node);
+            }
+
+            $normalStyle = $xpath->query('//w:style[@w:type="paragraph"][@w:styleId="Normal"]')?->item(0);
+            if (!$normalStyle instanceof \DOMElement) {
+                $normalStyle = $xpath->query('//w:style[@w:type="paragraph"][w:name[@w:val="Normal"]]')?->item(0);
+            }
+            if (!$normalStyle instanceof \DOMElement) {
+                $normalStyle = $xpath->query('//w:style[@w:type="paragraph"][@w:default="1"]')?->item(0);
+            }
+            if (!$normalStyle instanceof \DOMElement) {
+                $this->fail('Normal/default paragraph style not found in styles.xml');
+            }
+
+            $this->setStyleHalfPointFontSize($document, $xpath, $normalStyle, 22);
+        });
+
+        try {
+            $metadata = $this->loader->extractDocumentBaseFontSizeMetadata($tempFile);
+
+            $this->assertSame(11.0, $metadata['sizePt']);
+            $this->assertContains($metadata['source'], ['normalStyle', 'styleChain']);
+        } finally {
+            unlink($tempFile);
+        }
+    }
+
+    public function testExtractDocumentBaseFontSizeMetadataUsesBodyRunsWithoutStyles(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $section->addText('Body 1', ['size' => 12]);
+        $section->addText('Body 2', ['size' => 12]);
+        $table = $section->addTable();
+        $table->addRow();
+        $table->addCell(3000)->addText('Cell 1', ['size' => 9]);
+        $table->addCell(3000)->addText('Cell 2', ['size' => 9]);
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempFile);
+
+        $this->mutateDocxXmlPart($tempFile, 'word/styles.xml', function (DOMDocument $document, DOMXPath $xpath): void {
+            foreach ($xpath->query('/w:styles/w:docDefaults') ?: [] as $node) {
+                $node->parentNode?->removeChild($node);
+            }
+            foreach ($xpath->query('//w:sz | //w:szCs') ?: [] as $node) {
+                $node->parentNode?->removeChild($node);
+            }
+        });
+
+        try {
+            $metadata = $this->loader->extractDocumentBaseFontSizeMetadata($tempFile);
+
+            $this->assertSame(12.0, $metadata['sizePt']);
+            $this->assertSame('bodyRuns', $metadata['source']);
+        } finally {
+            unlink($tempFile);
+        }
+    }
+
+    public function testExtractDocumentBaseFontSizeMetadataUsesFallbackWhenNoSizesExist(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $phpWord->addSection()->addText('Body text');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempFile);
+
+        $this->mutateDocxXmlPart($tempFile, 'word/styles.xml', function (DOMDocument $document, DOMXPath $xpath): void {
+            foreach ($xpath->query('/w:styles/w:docDefaults') ?: [] as $node) {
+                $node->parentNode?->removeChild($node);
+            }
+            foreach ($xpath->query('//w:sz | //w:szCs') ?: [] as $node) {
+                $node->parentNode?->removeChild($node);
+            }
+        });
+
+        $this->mutateDocxXmlPart($tempFile, 'word/document.xml', function (DOMDocument $document, DOMXPath $xpath): void {
+            foreach ($xpath->query('//w:rPr/w:sz | //w:rPr/w:szCs') ?: [] as $node) {
+                $node->parentNode?->removeChild($node);
+            }
+            foreach ($xpath->query('//w:body//w:r') ?: [] as $runNode) {
+                $runNode->parentNode?->removeChild($runNode);
+            }
+        });
+
+        try {
+            $metadata = $this->loader->extractDocumentBaseFontSizeMetadata($tempFile);
+
+            $this->assertSame(12.0, $metadata['sizePt']);
+            $this->assertSame('fallback', $metadata['source']);
+        } finally {
+            unlink($tempFile);
+        }
+    }
+
+    public function testExtractDocumentBaseFontSizeMetadataConvertsHalfPointsToPt(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $phpWord->addSection()->addText('Test');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempFile);
+
+        $this->mutateDocxXmlPart($tempFile, 'word/styles.xml', function (DOMDocument $document, DOMXPath $xpath): void {
+            $docDefaults = $xpath->query('/w:styles/w:docDefaults')?->item(0);
+            if (!$docDefaults instanceof \DOMElement) {
+                $this->fail('docDefaults not found in styles.xml');
+            }
+
+            foreach ($xpath->query('.//w:rPrDefault/w:rPr/w:sz | .//w:rPrDefault/w:rPr/w:szCs', $docDefaults) ?: [] as $node) {
+                $node->parentNode?->removeChild($node);
+            }
+
+            $rPr = $xpath->query('.//w:rPrDefault/w:rPr', $docDefaults)?->item(0);
+            if (!$rPr instanceof \DOMElement) {
+                $this->fail('docDefaults/rPrDefault/rPr not found in styles.xml');
+            }
+
+            $sizeNode = $document->createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:sz');
+            $sizeNode->setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', '22');
+            $rPr->appendChild($sizeNode);
+        });
+
+        try {
+            $metadata = $this->loader->extractDocumentBaseFontSizeMetadata($tempFile);
+
+            $this->assertSame(11.0, $metadata['sizePt']);
+            $this->assertSame('docDefaults', $metadata['source']);
+        } finally {
+            unlink($tempFile);
+        }
+    }
+
     public function testLoadRegistersParagraphStyleIndentationFromStylesXml(): void
     {
         $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
@@ -207,5 +377,53 @@ class DocumentLoaderTest extends TestCase
         } finally {
             unlink($tempFile);
         }
+    }
+
+    private function mutateDocxXmlPart(string $docxPath, string $partPath, callable $mutator): void
+    {
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open($docxPath) === true);
+
+        try {
+            $xml = $zip->getFromName($partPath);
+            $this->assertIsString($xml);
+
+            $document = new DOMDocument();
+            $document->preserveWhiteSpace = false;
+            $document->formatOutput = false;
+            $this->assertTrue($document->loadXML($xml));
+
+            $xpath = new DOMXPath($document);
+            $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+
+            $mutator($document, $xpath);
+
+            $updated = $document->saveXML();
+            $this->assertIsString($updated);
+            $this->assertTrue($zip->addFromString($partPath, $updated));
+        } finally {
+            $zip->close();
+        }
+    }
+
+    private function setStyleHalfPointFontSize(
+        DOMDocument $document,
+        DOMXPath $xpath,
+        \DOMElement $styleNode,
+        int $halfPoints
+    ): void {
+        $runProperties = $xpath->query('w:rPr', $styleNode)?->item(0);
+        if (!$runProperties instanceof \DOMElement) {
+            $runProperties = $document->createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:rPr');
+            $styleNode->appendChild($runProperties);
+        }
+
+        foreach ($xpath->query('w:sz | w:szCs', $runProperties) ?: [] as $node) {
+            $runProperties->removeChild($node);
+        }
+
+        $sizeNode = $document->createElementNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:sz');
+        $sizeNode->setAttributeNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'w:val', (string)$halfPoints);
+        $runProperties->appendChild($sizeNode);
     }
 }

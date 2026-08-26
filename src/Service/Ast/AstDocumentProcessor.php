@@ -159,7 +159,15 @@ final class AstDocumentProcessor
             $processingOptions ??= new ProcessingOptions();
             $hasChanges        = false;
             $defaultFontSize   = null;
-            $loadedDocument    = $this->documentLoader->loadWithDocumentMetadata($filePath, $hasChanges, $defaultFontSize);
+            $defaultFontSizeSource = null;
+            $defaultFontSizeRaw = null;
+            $loadedDocument    = $this->documentLoader->loadWithDocumentMetadata(
+                $filePath,
+                $hasChanges,
+                $defaultFontSize,
+                $defaultFontSizeSource,
+                $defaultFontSizeRaw
+            );
 
             $context = new ConversionContext();
             $context->setDefaultFontSize($defaultFontSize);
@@ -169,6 +177,10 @@ final class AstDocumentProcessor
             $ast           = $this->astConverter->convert($loadedDocument, $context);
             $normalization = $this->normalizationPipeline->normalize($ast);
             $document      = $normalization['document'];
+            $document
+                ->setBaseFontSizePt($defaultFontSize ?? 12.0)
+                ->setBaseFontSizeSource($defaultFontSizeSource ?? 'fallback')
+                ->setBaseFontSizeRaw($defaultFontSizeRaw);
 
             if ($processingOptions->templateSyntaxProfile !== null) {
                 $document = (new TemplateAnnotationPass($processingOptions->templateSyntaxProfile))->apply($document);

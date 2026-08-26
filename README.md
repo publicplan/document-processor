@@ -73,7 +73,7 @@ $annotatedAst = $astProcessor->processToAst(
     new ProcessingOptions(templateSyntaxProfile: new GenericTemplateSyntaxProfile())
 );
 
-$astVersion = $astOnly->astVersion; // currently "1.4.0"
+$astVersion = $astOnly->astVersion; // currently "1.5.0"
 $ast = $astOnly->ast;               // public AST contract (no renderer internals)
 $htmlFromAstRoute = $astAndHtml->html;
 ```
@@ -187,6 +187,23 @@ Resolution priority is deterministic:
 3. `basedOn` chain
 4. document defaults
 5. renderer default
+
+### Document base font size in public AST
+
+`document.baseFontSizePt` is always present and defines the canonical base size for the whole document.
+
+- `document.baseFontSizePt` (`float`, points): deterministic base size for relative typography
+- `document.baseFontSizeSource` (`string`): source used for resolution (`docDefaults`, `normalStyle`, `styleChain`, `bodyRuns`, `fallback`)
+- `document.baseFontSizeRaw` (`object`, optional): debug payload with raw resolution hints
+
+Resolution priority is fixed (first valid source wins):
+
+1. `styles.xml` → `docDefaults` → `w:rPrDefault/w:rPr/w:sz` (fallback `w:szCs`)
+2. paragraph style `Normal` / primary body style including `basedOn` chain
+3. most frequent body-run size from flowing text (`document.xml`, tables/TOC excluded)
+4. hard fallback `12pt`
+
+Relative values (for example `em` or `data-font-scale`) should be interpreted against `document.baseFontSizePt`. Downstream consumers therefore do not need their own base-font heuristics.
 
 ## Framework Integration
 

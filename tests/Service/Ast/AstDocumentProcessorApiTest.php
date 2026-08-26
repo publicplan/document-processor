@@ -48,6 +48,8 @@ class AstDocumentProcessorApiTest extends TestCase
         $this->assertInstanceOf(ProcessedAstDocument::class, $result);
         $this->assertSame(PublicAstSerializer::AST_VERSION, $result->astVersion);
         $this->assertSame('document', $result->ast['type']);
+        $this->assertSame(12.0, $result->ast['baseFontSizePt']);
+        $this->assertSame('fallback', $result->ast['baseFontSizeSource']);
         $this->assertSame(['sourceRef' => null], $result->ast['metadata']);
 
         $paragraph = $result->ast['sections'][0]['paragraphs'][0];
