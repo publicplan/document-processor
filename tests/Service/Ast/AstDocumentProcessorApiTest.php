@@ -155,6 +155,36 @@ class AstDocumentProcessorApiTest extends TestCase
         $this->assertSame(0, $paragraph['items'][0]['depth']);
     }
 
+    public function test_process_to_ast_exposes_list_item_layout_metadata(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $listItem = $section->addListItemRun(0);
+        $listItem->addText('Layout-Listenpunkt');
+        $style = $listItem->getParagraphStyle();
+        $style->setIndentLeft(720); // 1.27cm
+        $style->setHanging(360); // 0.64cm
+        $style->setSpaceBefore(240); // 0.42cm
+        $style->setSpaceAfter(480); // 0.85cm
+        $style->setLineHeight(1.5);
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToAst('/test/file.docx', 'test.docx');
+
+        $item = $result->ast['sections'][0]['paragraphs'][0]['items'][0];
+        $this->assertSame('listItem', $item['type']);
+        $this->assertEqualsWithDelta(1.27, $item['indent']['left'], 0.01);
+        $this->assertEqualsWithDelta(0.64, $item['indent']['hanging'], 0.01);
+        $this->assertEqualsWithDelta(0.42, $item['spacing']['before'], 0.01);
+        $this->assertEqualsWithDelta(0.85, $item['spacing']['after'], 0.01);
+        $this->assertSame(1.5, $item['spacing']['line']);
+    }
+
     public function test_process_to_html_preserves_center_and_justify_alignment(): void
     {
         $loader = $this->createMock(DocumentLoader::class);
@@ -244,6 +274,31 @@ class AstDocumentProcessorApiTest extends TestCase
         } finally {
             @unlink($docxPath);
         }
+    }
+
+    public function test_process_to_ast_exposes_table_layout_metadata_fields(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $table = $section->addTable();
+        $table->addRow();
+        $table->addCell(2000)->addText('A1');
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToAst('/test/table.docx', 'table.docx');
+
+        $tableNode = $result->ast['sections'][0]['paragraphs'][0];
+        $this->assertSame('table', $tableNode['type']);
+        $this->assertArrayHasKey('indent', $tableNode);
+        $this->assertArrayHasKey('spacing', $tableNode);
+        $this->assertArrayHasKey('cellSpacing', $tableNode);
+        $this->assertArrayHasKey('layout', $tableNode);
+        $this->assertArrayHasKey('cellMargins', $tableNode);
     }
 
     public function test_paragraph_spacing_before_renders_as_margin_top(): void

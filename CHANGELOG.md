@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Öffentlicher AST-Contract erweitert um Word-nahe Layout-Metadaten für Listen:
+  - `ListItemNode`: `alignment`, `indent` (`left/right/firstLine/hanging`), `spacing` (`before/after/line`), `level` (`indentLeft/indentHanging/tabStop/markerOffset`)
+  - `ListNode`: aggregierte `spacing` (`before/after`) und `indent.left`
+- Öffentlicher AST-Contract erweitert um Tabellen-Layout-Metadaten auf `TableNode`:
+  - `alignment`, `indent.left`, `spacing.before/after`, `cellSpacing`, `layout`, `cellMargins`
+- `WordToAstConverter` liest die neuen Werte direkt aus DOCX/PhpWord-Styles (inkl. List-Level-Definitionen und Table-Styles), ohne Heuristik.
+
+### Changed
+- AST-Version im öffentlichen Serializer auf `1.2.0` erhöht.
+
 ## [2.0.1] - 2026-08-24
 
 ### Added

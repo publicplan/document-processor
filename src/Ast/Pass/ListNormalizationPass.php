@@ -89,18 +89,14 @@ class ListNormalizationPass implements AstPass
                 }
 
                 // Erstelle einen ListNode mit den gesammelten Top-Level Items
-                $listNode = new ListNode(
-                    items: $listGroup
-                );
+                $listNode = $this->createListNodeFromItems($listGroup);
                 $newParagraphs[] = $listNode;
 
                 $i = $j;
             } else if ($element instanceof ListItemNode) {
                 // Ein Depth>0 Item ohne vorheriges Depth-0 Item?
                 // Das sollte nicht vorkommen, aber wir behandeln es trotzdem
-                $listNode = new ListNode(
-                    items: [$element]
-                );
+                $listNode = $this->createListNodeFromItems([$element]);
                 $newParagraphs[] = $listNode;
                 $i++;
             } else {
@@ -149,5 +145,21 @@ class ListNormalizationPass implements AstPass
         }
 
         return null;
+    }
+
+    /**
+     * @param ListItemNode[] $items
+     */
+    private function createListNodeFromItems(array $items): ListNode
+    {
+        $first = $items[0] ?? null;
+        $last = $items[count($items) - 1] ?? null;
+
+        return new ListNode(
+            items: $items,
+            spacingBefore: $first instanceof ListItemNode ? $first->getSpacingBefore() : null,
+            spacingAfter: $last instanceof ListItemNode ? $last->getSpacingAfter() : null,
+            indentLeft: $first instanceof ListItemNode ? $first->getIndentLeft() : null
+        );
     }
 }

@@ -11,6 +11,9 @@ class ListNode extends AstNode
      */
     public function __construct(
         private array $items = [],
+        private ?float $spacingBefore = null,
+        private ?float $spacingAfter = null,
+        private ?float $indentLeft = null,
         ?\Publicplan\DocumentProcessor\Ast\Metadata\SourceReference $sourceRef = null,
         ?string $phpWordType = null,
         ?array $resolvedStyle = null,
@@ -32,10 +35,32 @@ class ListNode extends AstNode
         return $this;
     }
 
+    public function getSpacingBefore(): ?float
+    {
+        return $this->spacingBefore;
+    }
+
+    public function getSpacingAfter(): ?float
+    {
+        return $this->spacingAfter;
+    }
+
+    public function getIndentLeft(): ?float
+    {
+        return $this->indentLeft;
+    }
+
     public function toArray(): array
     {
         return [
             'type' => 'list',
+            'spacing' => [
+                'before' => $this->spacingBefore,
+                'after' => $this->spacingAfter,
+            ],
+            'indent' => [
+                'left' => $this->indentLeft,
+            ],
             'items' => array_map(fn($i) => $i->toArray(), $this->items),
             'metadata' => $this->metadataToArray(),
         ];

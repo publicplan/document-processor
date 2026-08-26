@@ -40,6 +40,7 @@ use Publicplan\DocumentProcessor\Service\Converter\BreakElementConverter;
 use Publicplan\DocumentProcessor\Service\Converter\LinkElementConverter;
 use Publicplan\DocumentProcessor\Service\Converter\ListElementConverter;
 use Publicplan\DocumentProcessor\Service\Converter\PageBreakElementConverter;
+use Publicplan\DocumentProcessor\Service\Converter\ParagraphIndentHelper;
 use Publicplan\DocumentProcessor\Service\Converter\TableElementConverter;
 use Publicplan\DocumentProcessor\Service\Converter\TextBoxElementConverter;
 use Publicplan\DocumentProcessor\Service\Converter\TextElementConverter;
@@ -116,11 +117,29 @@ final class WordToAstConverter
                     $i = $nextIndex - 1;
 
                     $listConfig = $this->listConverter->createListConfig($element);
+                    $listParagraphLayout = $this->extractListParagraphLayout($element);
+                    $listLevelLayout = $this->extractListLevelLayout($element);
+                    $computedSpacingAfter = $bottomSpacingCm + $spacerSpacingCm;
                     $listItemNode = new ListItemNode(
                         numId: (int)($element->getStyle()?->getNumId() ?? 0),
                         depth: (int)$element->getDepth(),
                         numFormat: $this->mapListFormat($listConfig->tag, $listConfig->type),
                         children: $this->convertInlineElements($element->getElements(), $context),
+                        alignment: $listParagraphLayout['alignment'],
+                        indentLeft: $listParagraphLayout['indentLeft'],
+                        indentRight: $listParagraphLayout['indentRight'],
+                        indentFirstLine: $listParagraphLayout['indentFirstLine'],
+                        indentHanging: $listParagraphLayout['indentHanging'],
+                        spacingBefore: $listParagraphLayout['spacingBefore'],
+                        spacingAfter: $computedSpacingAfter > 0 ? $computedSpacingAfter : $listParagraphLayout['spacingAfter'],
+                        lineHeight: $listParagraphLayout['lineHeight'],
+                        levelIndentLeft: $listLevelLayout['indentLeft'],
+                        levelIndentHanging: $listLevelLayout['indentHanging'],
+                        levelTabStop: $listLevelLayout['tabStop'],
+                        levelMarkerOffset: $this->computeMarkerOffset(
+                            $listLevelLayout['tabStop'],
+                            $listLevelLayout['indentLeft']
+                        ),
                         resolvedStyle: $this->extractParagraphStyle($element->getParagraphStyle()),
                         renderHints: new RenderHints([
                             'list_tag' => $listConfig->tag,
@@ -293,7 +312,17 @@ final class WordToAstConverter
     private function convertTable(DocTable $table, ConversionContext $context): TableNode
     {
         $tableStyle = $this->resolveTableStyle($table->getStyle());
+        $tableLayout = $this->extractTableLayout($tableStyle);
         $tableNode = new TableNode(
+            width: $this->nullableNumericToInt($tableStyle?->getWidth()),
+            widthUnit: is_string($tableStyle?->getUnit()) ? $tableStyle->getUnit() : null,
+            alignment: $tableLayout['alignment'],
+            indentLeft: $tableLayout['indentLeft'],
+            spacingBefore: $tableLayout['spacingBefore'],
+            spacingAfter: $tableLayout['spacingAfter'],
+            cellSpacing: $tableLayout['cellSpacing'],
+            layout: $tableLayout['layout'],
+            cellMargins: $tableLayout['cellMargins'],
             resolvedStyle: $tableStyle !== null ? ['borders' => $this->extractTableBorderContext($tableStyle)] : null
         );
 
@@ -541,6 +570,187 @@ final class WordToAstConverter
         }
 
         return is_numeric($value) ? (int)$value : null;
+    }
+
+    /**
+     * @return array{
+     *     alignment:?string,
+     *     indentLeft:?float,
+     *     indentRight:?float,
+     *     indentFirstLine:?float,
+     *     indentHanging:?float,
+     *     spacingBefore:?float,
+     *     spacingAfter:?float,
+     *     lineHeight:?float
+     * }
+     */
+    private function extractListParagraphLayout(DocList $element): array
+    {
+        $paragraphStyle = $element->getParagraphStyle();
+        $resolvedIndentation = ParagraphIndentHelper::resolveEffectiveIndentation($paragraphStyle);
+        $paragraphStyleObject = is_object($paragraphStyle) ? $paragraphStyle : null;
+
+        return [
+            'alignment' => $paragraphStyleObject !== null && method_exists($paragraphStyleObject, 'getAlignment')
+                ? $paragraphStyleObject->getAlignment()
+                : null,
+            'indentLeft' => $this->nullableTwipsToCm($resolvedIndentation['indentLeft']),
+            'indentRight' => $paragraphStyleObject !== null && method_exists($paragraphStyleObject, 'getIndentRight')
+                ? $this->nullableTwipsToCm($paragraphStyleObject->getIndentRight())
+                : null,
+            'indentFirstLine' => $this->nullableTwipsToCm($resolvedIndentation['firstLine']),
+            'indentHanging' => $this->nullableTwipsToCm($resolvedIndentation['hanging']),
+            'spacingBefore' => $paragraphStyleObject !== null && method_exists($paragraphStyleObject, 'getSpaceBefore')
+                ? $this->nullableTwipsToCm($paragraphStyleObject->getSpaceBefore())
+                : null,
+            'spacingAfter' => $paragraphStyleObject !== null && method_exists($paragraphStyleObject, 'getSpaceAfter')
+                ? $this->nullableTwipsToCm($paragraphStyleObject->getSpaceAfter())
+                : null,
+            'lineHeight' => $this->extractLineHeight($paragraphStyleObject),
+        ];
+    }
+
+    /**
+     * @return array{indentLeft:?float, indentHanging:?float, tabStop:?float}
+     */
+    private function extractListLevelLayout(DocList $element): array
+    {
+        $styleName = $element->getStyle()?->getNumStyle();
+        if (!is_string($styleName) || $styleName === '') {
+            return ['indentLeft' => null, 'indentHanging' => null, 'tabStop' => null];
+        }
+
+        $style = Style::getStyle($styleName);
+        if (!$style instanceof \PhpOffice\PhpWord\Style\Numbering) {
+            return ['indentLeft' => null, 'indentHanging' => null, 'tabStop' => null];
+        }
+
+        $levels = $style->getLevels();
+        $currentLevel = $levels[$element->getDepth()] ?? null;
+        $fallbackLevel = $levels ? reset($levels) : null;
+        $resolvedLevel = $currentLevel ?? $fallbackLevel;
+
+        if (!is_object($resolvedLevel)) {
+            return ['indentLeft' => null, 'indentHanging' => null, 'tabStop' => null];
+        }
+
+        return [
+            'indentLeft' => $this->nullableTwipsToCm(
+                $this->readNumericValueFromLevel($resolvedLevel, ['getLeft', 'getIndentLeft'])
+            ),
+            'indentHanging' => $this->nullableTwipsToCm(
+                $this->readNumericValueFromLevel($resolvedLevel, ['getHanging', 'getIndentHanging'])
+            ),
+            'tabStop' => $this->nullableTwipsToCm(
+                $this->readNumericValueFromLevel($resolvedLevel, ['getTabPos', 'getTabStop'])
+            ),
+        ];
+    }
+
+    private function readNumericValueFromLevel(object $level, array $getters): float|int|string|null
+    {
+        foreach ($getters as $getter) {
+            if (!method_exists($level, $getter)) {
+                continue;
+            }
+
+            $value = $level->{$getter}();
+            if ($value !== null && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function computeMarkerOffset(?float $tabStop, ?float $indentLeft): ?float
+    {
+        if ($tabStop === null || $indentLeft === null) {
+            return null;
+        }
+
+        return round($tabStop - $indentLeft, 2);
+    }
+
+    /**
+     * @return array{
+     *     alignment:?string,
+     *     indentLeft:?float,
+     *     spacingBefore:?float,
+     *     spacingAfter:?float,
+     *     cellSpacing:?float,
+     *     layout:?string,
+     *     cellMargins:?array{top:?float,right:?float,bottom:?float,left:?float}
+     * }
+     */
+    private function extractTableLayout(?TableStyle $tableStyle): array
+    {
+        if ($tableStyle === null) {
+            return [
+                'alignment' => null,
+                'indentLeft' => null,
+                'spacingBefore' => null,
+                'spacingAfter' => null,
+                'cellSpacing' => null,
+                'layout' => null,
+                'cellMargins' => null,
+            ];
+        }
+
+        $cellMargins = [
+            'top' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getCellMarginTop', 'getMarginTop'])),
+            'right' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getCellMarginRight', 'getMarginRight'])),
+            'bottom' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getCellMarginBottom', 'getMarginBottom'])),
+            'left' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getCellMarginLeft', 'getMarginLeft'])),
+        ];
+        if ($cellMargins['top'] === null
+            && $cellMargins['right'] === null
+            && $cellMargins['bottom'] === null
+            && $cellMargins['left'] === null) {
+            $cellMargins = null;
+        }
+
+        return [
+            'alignment' => $this->readStringStyleValue($tableStyle, ['getAlignment']),
+            'indentLeft' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getIndent', 'getIndentLeft', 'getTblInd'])),
+            'spacingBefore' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getSpaceBefore', 'getSpacingBefore'])),
+            'spacingAfter' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getSpaceAfter', 'getSpacingAfter'])),
+            'cellSpacing' => $this->nullableTwipsToCm($this->readNumericStyleValue($tableStyle, ['getCellSpacing'])),
+            'layout' => $this->readStringStyleValue($tableStyle, ['getLayout']),
+            'cellMargins' => $cellMargins,
+        ];
+    }
+
+    private function readNumericStyleValue(object $style, array $getters): float|int|string|null
+    {
+        foreach ($getters as $getter) {
+            if (!method_exists($style, $getter)) {
+                continue;
+            }
+
+            $value = $style->{$getter}();
+            if ($value !== null && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function readStringStyleValue(object $style, array $getters): ?string
+    {
+        foreach ($getters as $getter) {
+            if (!method_exists($style, $getter)) {
+                continue;
+            }
+
+            $value = $style->{$getter}();
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     private function resolveTableStyle(null|string|TableStyle $tableStyle): ?TableStyle

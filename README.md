@@ -73,7 +73,7 @@ $annotatedAst = $astProcessor->processToAst(
     new ProcessingOptions(templateSyntaxProfile: new GenericTemplateSyntaxProfile())
 );
 
-$astVersion = $astOnly->astVersion; // currently "1.1.0"
+$astVersion = $astOnly->astVersion; // currently "1.2.0"
 $ast = $astOnly->ast;               // public AST contract (no renderer internals)
 $htmlFromAstRoute = $astAndHtml->html;
 ```
@@ -160,6 +160,16 @@ Example HTML output:
   Text with comprehensive paragraph formatting
 </p>
 ```
+
+### List and table layout metadata in public AST
+
+For AST-driven renderers (for example Twig exports), list and table nodes now expose explicit Word-aligned layout metadata, so inline styles can be derived without heuristic CSS resets:
+
+- `listItem.indent.{left,right,firstLine,hanging}`
+- `listItem.spacing.{before,after,line}`
+- `listItem.level.{indentLeft,indentHanging,tabStop,markerOffset}`
+- `list.spacing.{before,after}` and `list.indent.left`
+- `table.indent.left`, `table.spacing.{before,after}`, `table.cellSpacing`, `table.layout`, `table.cellMargins`
 
 ## Framework Integration
 

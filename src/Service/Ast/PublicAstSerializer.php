@@ -8,7 +8,7 @@ use Publicplan\DocumentProcessor\Ast\Node\DocumentNode;
 
 final class PublicAstSerializer
 {
-    public const AST_VERSION = '1.1.0';
+    public const AST_VERSION = '1.2.0';
 
     /**
      * @return array<string, mixed>

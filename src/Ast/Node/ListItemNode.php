@@ -17,6 +17,18 @@ class ListItemNode extends AstNode
         private ListFormat $numFormat = ListFormat::Bullet,
         private ?int $startNumeration = null,
         private array $children = [],
+        private ?string $alignment = null,
+        private ?float $indentLeft = null,
+        private ?float $indentRight = null,
+        private ?float $indentFirstLine = null,
+        private ?float $indentHanging = null,
+        private ?float $spacingBefore = null,
+        private ?float $spacingAfter = null,
+        private ?float $lineHeight = null,
+        private ?float $levelIndentLeft = null,
+        private ?float $levelIndentHanging = null,
+        private ?float $levelTabStop = null,
+        private ?float $levelMarkerOffset = null,
         ?\Publicplan\DocumentProcessor\Ast\Metadata\SourceReference $sourceRef = null,
         ?string $phpWordType = null,
         ?array $resolvedStyle = null,
@@ -58,6 +70,66 @@ class ListItemNode extends AstNode
         return $this->children;
     }
 
+    public function getAlignment(): ?string
+    {
+        return $this->alignment;
+    }
+
+    public function getIndentLeft(): ?float
+    {
+        return $this->indentLeft;
+    }
+
+    public function getIndentRight(): ?float
+    {
+        return $this->indentRight;
+    }
+
+    public function getIndentFirstLine(): ?float
+    {
+        return $this->indentFirstLine;
+    }
+
+    public function getIndentHanging(): ?float
+    {
+        return $this->indentHanging;
+    }
+
+    public function getSpacingBefore(): ?float
+    {
+        return $this->spacingBefore;
+    }
+
+    public function getSpacingAfter(): ?float
+    {
+        return $this->spacingAfter;
+    }
+
+    public function getLineHeight(): ?float
+    {
+        return $this->lineHeight;
+    }
+
+    public function getLevelIndentLeft(): ?float
+    {
+        return $this->levelIndentLeft;
+    }
+
+    public function getLevelIndentHanging(): ?float
+    {
+        return $this->levelIndentHanging;
+    }
+
+    public function getLevelTabStop(): ?float
+    {
+        return $this->levelTabStop;
+    }
+
+    public function getLevelMarkerOffset(): ?float
+    {
+        return $this->levelMarkerOffset;
+    }
+
     public function addChild(AstNode $child): self
     {
         $this->children[] = $child;
@@ -78,6 +150,24 @@ class ListItemNode extends AstNode
             'depth' => $this->depth,
             'numFormat' => $this->numFormat->value,
             'startNumeration' => $this->startNumeration,
+            'alignment' => $this->alignment,
+            'indent' => [
+                'left' => $this->indentLeft,
+                'right' => $this->indentRight,
+                'firstLine' => $this->indentFirstLine,
+                'hanging' => $this->indentHanging,
+            ],
+            'spacing' => [
+                'before' => $this->spacingBefore,
+                'after' => $this->spacingAfter,
+                'line' => $this->lineHeight,
+            ],
+            'level' => [
+                'indentLeft' => $this->levelIndentLeft,
+                'indentHanging' => $this->levelIndentHanging,
+                'tabStop' => $this->levelTabStop,
+                'markerOffset' => $this->levelMarkerOffset,
+            ],
             'children' => array_map(fn($c) => $c->toArray(), $this->children),
             'metadata' => $this->metadataToArray(),
         ];

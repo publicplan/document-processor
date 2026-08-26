@@ -72,6 +72,9 @@ class AstSerializationTest extends TestCase
         $this->assertEquals(1, $array['numId']);
         $this->assertEquals(0, $array['depth']);
         $this->assertEquals('bullet', $array['numFormat']);
+        $this->assertArrayHasKey('indent', $array);
+        $this->assertArrayHasKey('spacing', $array);
+        $this->assertArrayHasKey('level', $array);
     }
 
     public function test_table_structure_serializes(): void
@@ -94,6 +97,11 @@ class AstSerializationTest extends TestCase
         $array = $table->toArray();
 
         $this->assertEquals('table', $array['type']);
+        $this->assertArrayHasKey('indent', $array);
+        $this->assertArrayHasKey('spacing', $array);
+        $this->assertArrayHasKey('cellSpacing', $array);
+        $this->assertArrayHasKey('layout', $array);
+        $this->assertArrayHasKey('cellMargins', $array);
         $this->assertCount(2, $array['rows']);
         $this->assertTrue($array['rows'][0]['isHeader']);
         $this->assertFalse($array['rows'][1]['isHeader']);
