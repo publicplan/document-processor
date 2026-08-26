@@ -64,6 +64,19 @@ class AstSerializationTest extends TestCase
             depth: 0,
             numFormat: ListFormat::Bullet
         );
+        $item->setStyleRefs([
+            'paragraph' => [
+                'styleId' => 'ListParagraph',
+                'styleType' => 'paragraph',
+                'source' => 'styles.xml',
+            ],
+        ]);
+        $item->setStyleProvenance([
+            'indent.left' => ['value' => 1.27, 'source' => 'style'],
+        ]);
+        $item->setResolvedLayout([
+            'indent' => ['left' => 1.27],
+        ]);
         $item->addChild(new TextNode('Item 1'));
 
         $array = $item->toArray();
@@ -75,6 +88,9 @@ class AstSerializationTest extends TestCase
         $this->assertArrayHasKey('indent', $array);
         $this->assertArrayHasKey('spacing', $array);
         $this->assertArrayHasKey('level', $array);
+        $this->assertArrayHasKey('styleRefs', $array);
+        $this->assertArrayHasKey('styleProvenance', $array);
+        $this->assertArrayHasKey('resolvedLayout', $array);
     }
 
     public function test_table_structure_serializes(): void

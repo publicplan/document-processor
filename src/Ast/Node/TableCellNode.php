@@ -54,6 +54,7 @@ class TableCellNode extends AstNode
     {
         return [
             'type' => 'tableCell',
+            ...$this->styleContextToArray(),
             'width' => $this->width,
             'columnSpan' => $this->columnSpan,
             'rowSpan' => $this->rowSpan,

@@ -17,6 +17,10 @@ use PhpOffice\PhpWord\Element\TextRun as DocTextRun;
 use PhpOffice\PhpWord\PhpWord;
 use PhpOffice\PhpWord\Style;
 use PhpOffice\PhpWord\Style\Cell as CellStyle;
+use PhpOffice\PhpWord\Style\ListItem as ListItemStyle;
+use PhpOffice\PhpWord\Style\Numbering;
+use PhpOffice\PhpWord\Style\NumberingLevel;
+use PhpOffice\PhpWord\Style\Paragraph as ParagraphStyle;
 use PhpOffice\PhpWord\Style\Table as TableStyle;
 use Publicplan\DocumentProcessor\Ast\Metadata\ListFormat;
 use Publicplan\DocumentProcessor\Ast\Metadata\RenderHints;
@@ -119,11 +123,14 @@ final class WordToAstConverter
                     $listConfig = $this->listConverter->createListConfig($element);
                     $listParagraphLayout = $this->extractListParagraphLayout($element);
                     $listLevelLayout = $this->extractListLevelLayout($element);
+                    $numberingMetadata = $this->extractNumberingMetadata($element, $context);
                     $computedSpacingAfter = $bottomSpacingCm + $spacerSpacingCm;
+                    $effectiveSpacingAfter = $computedSpacingAfter > 0 ? $computedSpacingAfter : $listParagraphLayout['spacingAfter'];
                     $listItemNode = new ListItemNode(
                         numId: (int)($element->getStyle()?->getNumId() ?? 0),
                         depth: (int)$element->getDepth(),
                         numFormat: $this->mapListFormat($listConfig->tag, $listConfig->type),
+                        startNumeration: $numberingMetadata['start'],
                         children: $this->convertInlineElements($element->getElements(), $context),
                         alignment: $listParagraphLayout['alignment'],
                         indentLeft: $listParagraphLayout['indentLeft'],
@@ -131,7 +138,7 @@ final class WordToAstConverter
                         indentFirstLine: $listParagraphLayout['indentFirstLine'],
                         indentHanging: $listParagraphLayout['indentHanging'],
                         spacingBefore: $listParagraphLayout['spacingBefore'],
-                        spacingAfter: $computedSpacingAfter > 0 ? $computedSpacingAfter : $listParagraphLayout['spacingAfter'],
+                        spacingAfter: $effectiveSpacingAfter,
                         lineHeight: $listParagraphLayout['lineHeight'],
                         levelIndentLeft: $listLevelLayout['indentLeft'],
                         levelIndentHanging: $listLevelLayout['indentHanging'],
@@ -149,13 +156,21 @@ final class WordToAstConverter
                             'list_docx_id' => $listConfig->docxListId,
                         ])
                     );
+                    $listItemNode
+                        ->setStyleRefs($this->buildListStyleRefs($element, $context, $numberingMetadata))
+                        ->setStyleProvenance($this->buildListStyleProvenance($element, $context, $listParagraphLayout, $listLevelLayout, $numberingMetadata))
+                        ->setResolvedLayout($this->buildListResolvedLayout(
+                            array_replace($listParagraphLayout, ['spacingAfter' => $effectiveSpacingAfter]),
+                            $listLevelLayout,
+                            $numberingMetadata
+                        ));
                     $sectionNode->addParagraph($listItemNode);
                     continue;
                 }
 
                 if ($element instanceof DocText) {
                     $fontStyle = $element->getFontStyle();
-                    $sectionNode->addParagraph(new TextNode(
+                    $textNode = new TextNode(
                         content: $element->getText() ?? '',
                         bold: (bool)$fontStyle?->isBold(),
                         italic: (bool)$fontStyle?->isItalic(),
@@ -165,7 +180,9 @@ final class WordToAstConverter
                         trackChange: (bool)$fontStyle?->isStrikethrough() ? TrackChangeType::Deleted : TrackChangeType::None,
                         renderHints: new RenderHints([
                         ])
-                    ));
+                    );
+                    $textNode->setStyleRef($this->extractCharacterStyleRef($fontStyle));
+                    $sectionNode->addParagraph($textNode);
                     continue;
                 }
 
@@ -192,19 +209,26 @@ final class WordToAstConverter
 
                 if ($element instanceof DocTextRun) {
                     $legacyHtml = $this->textRunConverter->convert($element, $context);
+                    $paragraphStyle = $element->getParagraphStyle();
+                    $paragraphLayout = $this->extractParagraphLayout($paragraphStyle, $context);
                     $paragraph = new ParagraphNode(
                         children: $this->convertInlineElements($element->getElements(), $context),
-                        alignment: $element->getParagraphStyle()?->getAlignment(),
-                        indentLeft: $this->nullableTwipsToCm($element->getParagraphStyle()?->getIndentLeft()),
-                        indentRight: $this->nullableTwipsToCm($element->getParagraphStyle()?->getIndentRight()),
-                        indentFirstLine: $this->nullableTwipsToCm($element->getParagraphStyle()?->getIndentFirstLine()),
-                        spacingBefore: $this->nullableTwipsToCm($element->getParagraphStyle()?->getSpaceBefore()),
-                        spacingAfter: $this->nullableTwipsToCm($element->getParagraphStyle()?->getSpaceAfter()) ?? 0.0,
-                        lineHeight: $this->extractLineHeight($element->getParagraphStyle()),
-                        resolvedStyle: $this->extractParagraphStyle($element->getParagraphStyle()),
+                        alignment: $paragraphLayout['resolved']['alignment'],
+                        indentLeft: $paragraphLayout['resolved']['indentLeft'],
+                        indentRight: $paragraphLayout['resolved']['indentRight'],
+                        indentFirstLine: $paragraphLayout['resolved']['indentFirstLine'],
+                        spacingBefore: $paragraphLayout['resolved']['spacingBefore'],
+                        spacingAfter: $paragraphLayout['resolved']['spacingAfter'] ?? 0.0,
+                        lineHeight: $paragraphLayout['resolved']['lineHeight'],
+                        resolvedStyle: $this->extractParagraphStyle($paragraphStyle),
                         renderHints: new RenderHints([
                         ])
                     );
+                    $paragraph
+                        ->setStyleRefs(['paragraph' => $paragraphLayout['styleRef']])
+                        ->setStyleRef($paragraphLayout['styleRef'])
+                        ->setStyleProvenance($paragraphLayout['provenance'])
+                        ->setResolvedLayout($this->buildParagraphResolvedLayout($paragraphLayout['resolved']));
                     $sectionNode->addParagraph($paragraph);
                     continue;
                 }
@@ -245,7 +269,7 @@ final class WordToAstConverter
         foreach ($elements as $element) {
             if ($element instanceof DocText) {
                 $fontStyle = $element->getFontStyle();
-                $nodes[] = new TextNode(
+                $textNode = new TextNode(
                     content: $element->getText() ?? '',
                     bold: (bool)$fontStyle?->isBold(),
                     italic: (bool)$fontStyle?->isItalic(),
@@ -256,6 +280,8 @@ final class WordToAstConverter
                     renderHints: new RenderHints([
                     ])
                 );
+                $textNode->setStyleRef($this->extractCharacterStyleRef($fontStyle));
+                $nodes[] = $textNode;
                 continue;
             }
 
@@ -263,10 +289,10 @@ final class WordToAstConverter
                 $linkNode = new LinkNode(
                     href: $element->getSource(),
                     children: [
-                        new TextNode(
+                        (new TextNode(
                             content: $element->getText(),
                             trackChange: ($element->getFontStyle()?->isStrikethrough() ?? false) ? TrackChangeType::Deleted : TrackChangeType::None
-                        ),
+                        ))->setStyleRef($this->extractCharacterStyleRef($element->getFontStyle())),
                     ],
                     renderHints: new RenderHints([
                     ])
@@ -311,8 +337,10 @@ final class WordToAstConverter
 
     private function convertTable(DocTable $table, ConversionContext $context): TableNode
     {
-        $tableStyle = $this->resolveTableStyle($table->getStyle());
+        $rawTableStyle = $table->getStyle();
+        $tableStyle = $this->resolveTableStyle($rawTableStyle);
         $tableLayout = $this->extractTableLayout($tableStyle);
+        $tableStyleRef = $this->buildTableStyleRef($rawTableStyle, $context);
         $tableNode = new TableNode(
             width: $this->nullableNumericToInt($tableStyle?->getWidth()),
             widthUnit: is_string($tableStyle?->getUnit()) ? $tableStyle->getUnit() : null,
@@ -325,9 +353,30 @@ final class WordToAstConverter
             cellMargins: $tableLayout['cellMargins'],
             resolvedStyle: $tableStyle !== null ? ['borders' => $this->extractTableBorderContext($tableStyle)] : null
         );
+        $tableNode
+            ->setStyleRefs(['table' => $tableStyleRef])
+            ->setStyleRef($tableStyleRef)
+            ->setStyleProvenance($this->buildTableStyleProvenance($tableStyleRef, $tableLayout))
+            ->setResolvedLayout($this->buildTableResolvedLayout($tableLayout, $tableStyle));
 
         foreach ($table->getRows() as $row) {
-            $rowNode = new TableRowNode();
+            $rowStyle = $row->getStyle();
+            $rowNode = new TableRowNode(isHeader: (bool)$rowStyle?->isTblHeader());
+            $rowNode
+                ->setStyleRef($rowStyle !== null ? [
+                    'styleType' => 'direct',
+                    'source' => 'document.xml',
+                ] : null)
+                ->setStyleProvenance([
+                    'repeatHeader' => ['value' => (bool)$rowStyle?->isTblHeader(), 'source' => $rowStyle !== null ? 'direct' : 'rendererDefault'],
+                    'cantSplit' => ['value' => (bool)$rowStyle?->isCantSplit(), 'source' => $rowStyle !== null ? 'direct' : 'rendererDefault'],
+                    'height' => ['value' => $this->nullableTwipsToCm($row->getHeight()), 'source' => $row->getHeight() !== null ? 'direct' : 'rendererDefault'],
+                ])
+                ->setResolvedLayout([
+                    'repeatHeader' => (bool)$rowStyle?->isTblHeader(),
+                    'cantSplit' => (bool)$rowStyle?->isCantSplit(),
+                    'height' => $this->nullableTwipsToCm($row->getHeight()),
+                ]);
             foreach ($row->getCells() as $cell) {
                 $cellStyle = $cell->getStyle();
                 $cellNode = new TableCellNode(
@@ -336,16 +385,39 @@ final class WordToAstConverter
                     rowSpan: $this->nullableNumericToInt($cellStyle?->getVMerge()),
                     resolvedStyle: $this->extractCellStyle($cellStyle)
                 );
+                $cellNode
+                    ->setStyleRef($cellStyle !== null ? [
+                        'styleType' => 'direct',
+                        'source' => 'document.xml',
+                    ] : null)
+                    ->setStyleProvenance([
+                        'verticalAlign' => ['value' => $cellStyle?->getVAlign(), 'source' => $cellStyle !== null ? 'direct' : 'rendererDefault'],
+                        'textDirection' => ['value' => $cellStyle?->getTextDirection(), 'source' => $cellStyle !== null ? 'direct' : 'rendererDefault'],
+                        'shading' => ['value' => $cellStyle?->getBgColor(), 'source' => $cellStyle !== null ? 'direct' : 'rendererDefault'],
+                    ])
+                    ->setResolvedLayout($this->buildTableCellResolvedLayout($cellStyle));
 
                 foreach ($cell->getElements() as $cellElement) {
                     if ($cellElement instanceof DocTextRun) {
                         $legacyHtml = $this->textRunConverter->convert($cellElement, $context);
+                        $paragraphStyle = $cellElement->getParagraphStyle();
+                        $paragraphLayout = $this->extractParagraphLayout($paragraphStyle, $context);
                         $cellNode->addChild(new ParagraphNode(
                             children: $this->convertInlineElements($cellElement->getElements(), $context),
-                            resolvedStyle: $this->extractParagraphStyle($cellElement->getParagraphStyle()),
+                            alignment: $paragraphLayout['resolved']['alignment'],
+                            indentLeft: $paragraphLayout['resolved']['indentLeft'],
+                            indentRight: $paragraphLayout['resolved']['indentRight'],
+                            indentFirstLine: $paragraphLayout['resolved']['indentFirstLine'],
+                            spacingBefore: $paragraphLayout['resolved']['spacingBefore'],
+                            spacingAfter: $paragraphLayout['resolved']['spacingAfter'] ?? 0.0,
+                            lineHeight: $paragraphLayout['resolved']['lineHeight'],
+                            resolvedStyle: $this->extractParagraphStyle($paragraphStyle),
                             renderHints: new RenderHints([
                             ])
-                        ));
+                        )->setStyleRefs(['paragraph' => $paragraphLayout['styleRef']])
+                            ->setStyleRef($paragraphLayout['styleRef'])
+                            ->setStyleProvenance($paragraphLayout['provenance'])
+                            ->setResolvedLayout($this->buildParagraphResolvedLayout($paragraphLayout['resolved'])));
                         continue;
                     }
 
@@ -365,7 +437,9 @@ final class WordToAstConverter
 
     private function convertTextBox(DocTextBox $textBox, ConversionContext $context): TextBoxNode
     {
-        $node = new TextBoxNode();
+        $node = new TextBoxNode(renderHints: new RenderHints([
+            'legacy_html' => $this->textBoxConverter->convert($textBox, $context),
+        ]));
         $children = [];
 
         foreach ($textBox->getElements() as $element) {
@@ -373,7 +447,7 @@ final class WordToAstConverter
                 $children = array_merge($children, $this->convertInlineElements($element->getElements(), $context));
             } elseif ($element instanceof DocText) {
                 $fontStyle = $element->getFontStyle();
-                $children[] = new TextNode(
+                $children[] = (new TextNode(
                     content: $element->getText() ?? '',
                     bold: (bool)$fontStyle?->isBold(),
                     italic: (bool)$fontStyle?->isItalic(),
@@ -382,7 +456,7 @@ final class WordToAstConverter
                     preserveSpace: false,
                     trackChange: (bool)$fontStyle?->isStrikethrough() ? TrackChangeType::Deleted : TrackChangeType::None,
                     renderHints: new RenderHints([])
-                );
+                ))->setStyleRef($this->extractCharacterStyleRef($fontStyle));
             }
         }
 
@@ -425,6 +499,522 @@ final class WordToAstConverter
             'a' => ListFormat::LetterLower,
             default => ListFormat::Number,
         };
+    }
+
+    /**
+     * @return array{
+     *   styleRef:?array<string, mixed>,
+     *   resolved:array{
+     *      alignment:?string,
+     *      indentLeft:?float,
+     *      indentRight:?float,
+     *      indentFirstLine:?float,
+     *      indentHanging:?float,
+     *      spacingBefore:?float,
+     *      spacingAfter:?float,
+     *      lineHeight:?float
+     *   },
+     *   provenance:array<string, array{value:mixed,source:string}>
+     * }
+     */
+    private function extractParagraphLayout(object|string|null $paragraphStyle, ConversionContext $context): array
+    {
+        $snapshot = $this->getStyleSnapshot($context);
+        $styleRef = $this->buildParagraphStyleRef($paragraphStyle, $snapshot);
+        $resolvedIndentation = ParagraphIndentHelper::resolveEffectiveIndentation(
+            $paragraphStyle instanceof ParagraphStyle || is_string($paragraphStyle) ? $paragraphStyle : null
+        );
+        $paragraph = $paragraphStyle instanceof ParagraphStyle ? $paragraphStyle : null;
+
+        $resolved = [];
+        $provenance = [];
+
+        [$resolved['alignment'], $source] = $this->resolveParagraphField(
+            'alignment',
+            $paragraph?->getAlignment(),
+            $styleRef,
+            $snapshot,
+            static fn (mixed $value): ?string => is_string($value) && $value !== '' ? $value : null
+        );
+        $provenance['alignment'] = ['value' => $resolved['alignment'], 'source' => $source];
+
+        [$resolved['indentLeft'], $source] = $this->resolveParagraphField(
+            'indentLeft',
+            $paragraph?->getIndentLeft(),
+            $styleRef,
+            $snapshot,
+            fn (mixed $value): ?float => $this->nullableTwipsToCm(is_numeric($value) ? (float)$value : null)
+        );
+        if ($resolved['indentLeft'] === null) {
+            $resolved['indentLeft'] = $this->nullableTwipsToCm($resolvedIndentation['indentLeft']);
+        }
+        $provenance['indent.left'] = ['value' => $resolved['indentLeft'], 'source' => $source];
+
+        [$resolved['indentRight'], $source] = $this->resolveParagraphField(
+            'indentRight',
+            $paragraph?->getIndentRight(),
+            $styleRef,
+            $snapshot,
+            fn (mixed $value): ?float => $this->nullableTwipsToCm(is_numeric($value) ? (float)$value : null)
+        );
+        $provenance['indent.right'] = ['value' => $resolved['indentRight'], 'source' => $source];
+
+        [$resolved['indentFirstLine'], $source] = $this->resolveParagraphField(
+            'indentFirstLine',
+            $paragraph?->getIndentFirstLine(),
+            $styleRef,
+            $snapshot,
+            fn (mixed $value): ?float => $this->nullableTwipsToCm(is_numeric($value) ? (float)$value : null)
+        );
+        if ($resolved['indentFirstLine'] === null) {
+            $resolved['indentFirstLine'] = $this->nullableTwipsToCm($resolvedIndentation['firstLine']);
+        }
+        $provenance['indent.firstLine'] = ['value' => $resolved['indentFirstLine'], 'source' => $source];
+
+        [$resolved['indentHanging'], $source] = $this->resolveParagraphField(
+            'indentHanging',
+            $paragraph?->getHanging(),
+            $styleRef,
+            $snapshot,
+            fn (mixed $value): ?float => $this->nullableTwipsToCm(is_numeric($value) ? (float)$value : null)
+        );
+        if ($resolved['indentHanging'] === null) {
+            $resolved['indentHanging'] = $this->nullableTwipsToCm($resolvedIndentation['hanging']);
+        }
+        $provenance['indent.hanging'] = ['value' => $resolved['indentHanging'], 'source' => $source];
+
+        [$resolved['spacingBefore'], $source] = $this->resolveParagraphField(
+            'spacingBefore',
+            $paragraph?->getSpaceBefore(),
+            $styleRef,
+            $snapshot,
+            fn (mixed $value): ?float => $this->nullableTwipsToCm(is_numeric($value) ? (float)$value : null)
+        );
+        $provenance['spacing.before'] = ['value' => $resolved['spacingBefore'], 'source' => $source];
+
+        [$resolved['spacingAfter'], $source] = $this->resolveParagraphField(
+            'spacingAfter',
+            $paragraph?->getSpaceAfter(),
+            $styleRef,
+            $snapshot,
+            fn (mixed $value): ?float => $this->nullableTwipsToCm(is_numeric($value) ? (float)$value : null),
+            0.0
+        );
+        $provenance['spacing.after'] = ['value' => $resolved['spacingAfter'], 'source' => $source];
+
+        [$resolved['lineHeight'], $source] = $this->resolveParagraphField(
+            'line',
+            $paragraph?->getLineHeight(),
+            $styleRef,
+            $snapshot,
+            static function (mixed $value): ?float {
+                if ($value === null || $value === '') {
+                    return null;
+                }
+                if (!is_numeric($value)) {
+                    return null;
+                }
+                $numeric = (float)$value;
+                return $numeric > 10 ? round($numeric / 240, 2) : $numeric;
+            }
+        );
+        $provenance['spacing.line'] = ['value' => $resolved['lineHeight'], 'source' => $source];
+
+        return [
+            'styleRef' => $styleRef,
+            'resolved' => $resolved,
+            'provenance' => $provenance,
+        ];
+    }
+
+    /**
+     * @return array{0:mixed,1:string}
+     */
+    private function resolveParagraphField(
+        string $field,
+        mixed $directValue,
+        ?array $styleRef,
+        array $snapshot,
+        callable $transform,
+        mixed $rendererDefault = null
+    ): array {
+        $direct = $transform($directValue);
+        if ($direct !== null) {
+            return [$direct, 'direct'];
+        }
+
+        $styleId = is_array($styleRef) ? ($styleRef['styleId'] ?? null) : null;
+        $paragraphStyles = $snapshot['styles']['paragraph'] ?? [];
+        if (is_string($styleId) && $styleId !== '' && isset($paragraphStyles[$styleId][$field])) {
+            $value = $transform($paragraphStyles[$styleId][$field]);
+            if ($value !== null) {
+                return [$value, 'style'];
+            }
+        }
+
+        $chain = is_array($styleRef) && is_array($styleRef['basedOnChain'] ?? null)
+            ? $styleRef['basedOnChain']
+            : [];
+        foreach ($chain as $chainStyleId) {
+            if (!is_string($chainStyleId) || $chainStyleId === $styleId || !isset($paragraphStyles[$chainStyleId])) {
+                continue;
+            }
+            $value = $transform($paragraphStyles[$chainStyleId][$field] ?? null);
+            if ($value !== null) {
+                return [$value, 'basedOn'];
+            }
+        }
+
+        $defaults = $snapshot['styles']['defaults']['paragraph'] ?? [];
+        $defaultValue = $transform($defaults[$field] ?? null);
+        if ($defaultValue !== null) {
+            return [$defaultValue, 'default'];
+        }
+
+        return [$rendererDefault, 'rendererDefault'];
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     * @return array<string, mixed>|null
+     */
+    private function buildParagraphStyleRef(object|string|null $paragraphStyle, array $snapshot): ?array
+    {
+        $styleId = null;
+        if ($paragraphStyle instanceof ParagraphStyle) {
+            $styleId = $paragraphStyle->getStyleName();
+        } elseif (is_string($paragraphStyle) && $paragraphStyle !== '') {
+            $styleId = $paragraphStyle;
+        }
+
+        if (!is_string($styleId) || $styleId === '') {
+            return null;
+        }
+
+        $styleName = $snapshot['styles']['paragraph'][$styleId]['styleName'] ?? null;
+        $basedOnChain = $this->buildBasedOnChain($styleId, 'paragraph', $snapshot);
+
+        return [
+            'styleId' => $styleId,
+            'styleName' => is_string($styleName) && $styleName !== '' ? $styleName : $styleId,
+            'styleType' => 'paragraph',
+            'source' => 'styles.xml',
+            'basedOnChain' => $basedOnChain,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $resolved
+     * @return array<string, mixed>
+     */
+    private function buildParagraphResolvedLayout(array $resolved): array
+    {
+        return [
+            'alignment' => $resolved['alignment'] ?? null,
+            'indent' => [
+                'left' => $resolved['indentLeft'] ?? null,
+                'right' => $resolved['indentRight'] ?? null,
+                'firstLine' => $resolved['indentFirstLine'] ?? null,
+                'hanging' => $resolved['indentHanging'] ?? null,
+            ],
+            'spacing' => [
+                'before' => $resolved['spacingBefore'] ?? null,
+                'after' => $resolved['spacingAfter'] ?? null,
+                'line' => $resolved['lineHeight'] ?? null,
+            ],
+        ];
+    }
+
+    private function extractCharacterStyleRef(?object $fontStyle): ?array
+    {
+        if ($fontStyle === null || !method_exists($fontStyle, 'getStyleName')) {
+            return null;
+        }
+
+        $styleId = $fontStyle->getStyleName();
+        if (!is_string($styleId) || $styleId === '') {
+            return null;
+        }
+
+        return [
+            'styleId' => $styleId,
+            'styleName' => $styleId,
+            'styleType' => 'character',
+            'source' => 'styles.xml',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function extractNumberingMetadata(DocList $element, ConversionContext $context): array
+    {
+        $style = $element->getStyle();
+        $numId = $this->nullableNumericToInt($style?->getNumId());
+        $depth = (int)$element->getDepth();
+        $styleName = $style instanceof ListItemStyle ? $style->getNumStyle() : null;
+
+        $numberingStyle = is_string($styleName) && $styleName !== ''
+            ? Style::getStyle($styleName)
+            : null;
+        $numberingStyle = $numberingStyle instanceof Numbering ? $numberingStyle : null;
+
+        $levelObject = null;
+        if ($numberingStyle instanceof Numbering) {
+            $levels = $numberingStyle->getLevels();
+            $levelObject = $levels[$depth] ?? ($levels ? reset($levels) : null);
+        }
+        $levelObject = $levelObject instanceof NumberingLevel ? $levelObject : null;
+
+        $snapshot = $this->getStyleSnapshot($context);
+        $numMap = $snapshot['numbering']['numMap'] ?? [];
+        $abstractNumId = $numId !== null ? ($numMap[(string)$numId]['abstractNumId'] ?? null) : null;
+        $levelSnapshot = [];
+        if ($abstractNumId !== null) {
+            $levelSnapshot = $snapshot['numbering']['levels'][(string)$abstractNumId][(string)$depth] ?? [];
+        }
+
+        $leftTwips = $levelSnapshot['left'] ?? $levelObject?->getLeft();
+        $hangingTwips = $levelSnapshot['hanging'] ?? $levelObject?->getHanging();
+        $tabTwips = $levelSnapshot['tabStop'] ?? $levelObject?->getTabPos();
+
+        return [
+            'numId' => $numId,
+            'numStyleId' => is_string($styleName) && $styleName !== '' ? $styleName : null,
+            'abstractNumId' => is_numeric($abstractNumId) ? (int)$abstractNumId : null,
+            'level' => $depth,
+            'start' => $this->nullableNumericToInt($levelSnapshot['start'] ?? $levelObject?->getStart()),
+            'format' => is_string($levelSnapshot['format'] ?? null) ? $levelSnapshot['format'] : $levelObject?->getFormat(),
+            'text' => is_string($levelSnapshot['text'] ?? null) ? $levelSnapshot['text'] : $levelObject?->getText(),
+            'suffix' => is_string($levelSnapshot['suffix'] ?? null) ? $levelSnapshot['suffix'] : $levelObject?->getSuffix(),
+            'justification' => is_string($levelSnapshot['alignment'] ?? null) ? $levelSnapshot['alignment'] : $levelObject?->getAlignment(),
+            'restart' => $this->nullableNumericToInt($levelSnapshot['restart'] ?? $levelObject?->getRestart()),
+            'indentLeft' => $this->nullableTwipsToCm(is_numeric($leftTwips) ? (float)$leftTwips : null),
+            'indentHanging' => $this->nullableTwipsToCm(is_numeric($hangingTwips) ? (float)$hangingTwips : null),
+            'tabStop' => $this->nullableTwipsToCm(is_numeric($tabTwips) ? (float)$tabTwips : null),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildListStyleRefs(
+        DocList $element,
+        ConversionContext $context,
+        array $numberingMetadata
+    ): array {
+        $paragraphStyleRef = $this->extractParagraphLayout($element->getParagraphStyle(), $context)['styleRef'];
+
+        return [
+            'paragraph' => $paragraphStyleRef,
+            'numbering' => [
+                'numId' => $numberingMetadata['numId'] ?? null,
+                'abstractNumId' => $numberingMetadata['abstractNumId'] ?? null,
+                'level' => $numberingMetadata['level'] ?? null,
+                'numStyleId' => $numberingMetadata['numStyleId'] ?? null,
+                'source' => 'numbering.xml',
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildListStyleProvenance(
+        DocList $element,
+        ConversionContext $context,
+        array $listParagraphLayout,
+        array $listLevelLayout,
+        array $numberingMetadata
+    ): array {
+        $paragraphProvenance = $this->extractParagraphLayout($element->getParagraphStyle(), $context)['provenance'];
+        $paragraphProvenance['level.indentLeft'] = [
+            'value' => $listLevelLayout['indentLeft'],
+            'source' => $listLevelLayout['indentLeft'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['level.indentHanging'] = [
+            'value' => $listLevelLayout['indentHanging'],
+            'source' => $listLevelLayout['indentHanging'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['level.tabStop'] = [
+            'value' => $listLevelLayout['tabStop'],
+            'source' => $listLevelLayout['tabStop'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.format'] = [
+            'value' => $numberingMetadata['format'] ?? null,
+            'source' => $numberingMetadata['format'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.text'] = [
+            'value' => $numberingMetadata['text'] ?? null,
+            'source' => $numberingMetadata['text'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.start'] = [
+            'value' => $numberingMetadata['start'] ?? null,
+            'source' => $numberingMetadata['start'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.suffix'] = [
+            'value' => $numberingMetadata['suffix'] ?? null,
+            'source' => $numberingMetadata['suffix'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+        $paragraphProvenance['marker.justification'] = [
+            'value' => $numberingMetadata['justification'] ?? null,
+            'source' => $numberingMetadata['justification'] !== null ? 'numberingLevel' : 'rendererDefault',
+        ];
+
+        return $paragraphProvenance;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildListResolvedLayout(array $paragraphLayout, array $levelLayout, array $numberingMetadata): array
+    {
+        return [
+            'alignment' => $paragraphLayout['alignment'],
+            'indent' => [
+                'left' => $paragraphLayout['indentLeft'],
+                'right' => $paragraphLayout['indentRight'],
+                'firstLine' => $paragraphLayout['indentFirstLine'],
+                'hanging' => $paragraphLayout['indentHanging'],
+            ],
+            'spacing' => [
+                'before' => $paragraphLayout['spacingBefore'],
+                'after' => $paragraphLayout['spacingAfter'],
+                'line' => $paragraphLayout['lineHeight'],
+            ],
+            'level' => [
+                'indentLeft' => $levelLayout['indentLeft'],
+                'indentHanging' => $levelLayout['indentHanging'],
+                'tabStop' => $levelLayout['tabStop'],
+                'markerOffset' => $this->computeMarkerOffset($levelLayout['tabStop'], $levelLayout['indentLeft']),
+            ],
+            'marker' => [
+                'format' => $numberingMetadata['format'] ?? null,
+                'text' => $numberingMetadata['text'] ?? null,
+                'start' => $numberingMetadata['start'] ?? null,
+                'suffix' => $numberingMetadata['suffix'] ?? null,
+                'justification' => $numberingMetadata['justification'] ?? null,
+                'restart' => $numberingMetadata['restart'] ?? null,
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $tableStyleRef
+     * @return array<string, mixed>
+     */
+    private function buildTableStyleProvenance(?array $tableStyleRef, array $tableLayout): array
+    {
+        $styleSource = $tableStyleRef !== null ? 'style' : 'direct';
+        return [
+            'alignment' => ['value' => $tableLayout['alignment'], 'source' => $tableLayout['alignment'] !== null ? $styleSource : 'rendererDefault'],
+            'indent.left' => ['value' => $tableLayout['indentLeft'], 'source' => $tableLayout['indentLeft'] !== null ? $styleSource : 'rendererDefault'],
+            'spacing.before' => ['value' => $tableLayout['spacingBefore'], 'source' => $tableLayout['spacingBefore'] !== null ? $styleSource : 'rendererDefault'],
+            'spacing.after' => ['value' => $tableLayout['spacingAfter'], 'source' => $tableLayout['spacingAfter'] !== null ? $styleSource : 'rendererDefault'],
+            'cellSpacing' => ['value' => $tableLayout['cellSpacing'], 'source' => $tableLayout['cellSpacing'] !== null ? $styleSource : 'rendererDefault'],
+            'layout' => ['value' => $tableLayout['layout'], 'source' => $tableLayout['layout'] !== null ? $styleSource : 'rendererDefault'],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildTableResolvedLayout(array $tableLayout, ?TableStyle $tableStyle): array
+    {
+        return [
+            'alignment' => $tableLayout['alignment'],
+            'indent' => ['left' => $tableLayout['indentLeft']],
+            'spacing' => [
+                'before' => $tableLayout['spacingBefore'],
+                'after' => $tableLayout['spacingAfter'],
+            ],
+            'cellSpacing' => $tableLayout['cellSpacing'],
+            'layout' => $tableLayout['layout'],
+            'cellMargins' => $tableLayout['cellMargins'],
+            'borders' => $tableStyle !== null ? $this->extractTableBorderContext($tableStyle) : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildTableCellResolvedLayout(?CellStyle $cellStyle): array
+    {
+        return [
+            'verticalAlign' => $cellStyle?->getVAlign(),
+            'textDirection' => $cellStyle?->getTextDirection(),
+            'margins' => [
+                'top' => $this->nullableTwipsToCm($cellStyle?->getPaddingTop()),
+                'right' => $this->nullableTwipsToCm($cellStyle?->getPaddingRight()),
+                'bottom' => $this->nullableTwipsToCm($cellStyle?->getPaddingBottom()),
+                'left' => $this->nullableTwipsToCm($cellStyle?->getPaddingLeft()),
+            ],
+            'borders' => $cellStyle !== null ? [
+                'top' => $this->readBorderFromStyle($cellStyle, 'top'),
+                'right' => $this->readBorderFromStyle($cellStyle, 'right'),
+                'bottom' => $this->readBorderFromStyle($cellStyle, 'bottom'),
+                'left' => $this->readBorderFromStyle($cellStyle, 'left'),
+            ] : null,
+            'shading' => $cellStyle?->getBgColor(),
+        ];
+    }
+
+    /**
+     * @param null|string|TableStyle $rawTableStyle
+     * @return array<string, mixed>|null
+     */
+    private function buildTableStyleRef(null|string|TableStyle $rawTableStyle, ConversionContext $context): ?array
+    {
+        $snapshot = $this->getStyleSnapshot($context);
+        $styleId = null;
+        if (is_string($rawTableStyle) && $rawTableStyle !== '') {
+            $styleId = $rawTableStyle;
+        } elseif ($rawTableStyle instanceof TableStyle && is_string($rawTableStyle->getStyleName()) && $rawTableStyle->getStyleName() !== '') {
+            $styleId = $rawTableStyle->getStyleName();
+        }
+
+        if (!is_string($styleId) || $styleId === '') {
+            return null;
+        }
+
+        $styleName = $snapshot['styles']['table'][$styleId]['styleName'] ?? null;
+        return [
+            'styleId' => $styleId,
+            'styleName' => is_string($styleName) && $styleName !== '' ? $styleName : $styleId,
+            'styleType' => 'table',
+            'source' => 'styles.xml',
+            'basedOnChain' => $this->buildBasedOnChain($styleId, 'table', $snapshot),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $snapshot
+     * @return string[]
+     */
+    private function buildBasedOnChain(string $styleId, string $styleType, array $snapshot): array
+    {
+        $chain = [];
+        $visited = [];
+        $current = $styleId;
+        $styles = $snapshot['styles'][$styleType] ?? [];
+
+        while (is_string($current) && $current !== '' && !isset($visited[$current])) {
+            $visited[$current] = true;
+            $chain[] = $current;
+            $next = $styles[$current]['basedOn'] ?? null;
+            $current = is_string($next) && $next !== '' ? $next : '';
+        }
+
+        return $chain;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function getStyleSnapshot(ConversionContext $context): array
+    {
+        $snapshot = $context->getStyleSnapshot();
+        return is_array($snapshot) ? $snapshot : [];
     }
 
     private function extractParagraphStyle(object|string|null $pStyle): array

@@ -168,4 +168,33 @@ class DocumentLoaderTest extends TestCase
             unlink($tempFile);
         }
     }
+
+    public function testExtractAstStyleSnapshotContainsStylesAndNumbering(): void
+    {
+        $tempFile = tempnam(sys_get_temp_dir(), 'test_') . '.docx';
+        assert($tempFile !== false);
+
+        $phpWord = new PhpWord();
+        $phpWord->addParagraphStyle('BaseP', ['spaceAfter' => 480]);
+        $phpWord->addParagraphStyle('ChildP', ['basedOn' => 'BaseP']);
+        $section = $phpWord->addSection();
+        $section->addText('Hello', [], 'ChildP');
+        $list = $section->addListItemRun(0);
+        $list->addText('Item');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tempFile);
+
+        try {
+            $snapshot = $this->loader->extractAstStyleSnapshot($tempFile);
+
+            $this->assertIsArray($snapshot);
+            $this->assertArrayHasKey('styles', $snapshot);
+            $this->assertArrayHasKey('numbering', $snapshot);
+            $this->assertArrayHasKey('paragraph', $snapshot['styles']);
+            $this->assertArrayHasKey('ChildP', $snapshot['styles']['paragraph']);
+            $this->assertSame('BaseP', $snapshot['styles']['paragraph']['ChildP']['basedOn']);
+            $this->assertArrayHasKey('numMap', $snapshot['numbering']);
+        } finally {
+            unlink($tempFile);
+        }
+    }
 }

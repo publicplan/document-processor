@@ -19,6 +19,8 @@ class ConversionContext
     private ?float $defaultFontSize = null;
 
     private bool $removeDeletedContent = true;
+    /** @var array<string, mixed>|null */
+    private ?array $styleSnapshot = null;
 
     public function __construct(
         private readonly bool $trackDistinctMessages = true
@@ -133,5 +135,21 @@ class ConversionContext
     public function shouldRemoveDeletedContent(): bool
     {
         return $this->removeDeletedContent;
+    }
+
+    /**
+     * @param array<string, mixed>|null $styleSnapshot
+     */
+    public function setStyleSnapshot(?array $styleSnapshot): void
+    {
+        $this->styleSnapshot = $styleSnapshot;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function getStyleSnapshot(): ?array
+    {
+        return $this->styleSnapshot;
     }
 }

@@ -73,7 +73,7 @@ $annotatedAst = $astProcessor->processToAst(
     new ProcessingOptions(templateSyntaxProfile: new GenericTemplateSyntaxProfile())
 );
 
-$astVersion = $astOnly->astVersion; // currently "1.2.0"
+$astVersion = $astOnly->astVersion; // currently "1.3.0"
 $ast = $astOnly->ast;               // public AST contract (no renderer internals)
 $htmlFromAstRoute = $astAndHtml->html;
 ```
@@ -168,8 +168,25 @@ For AST-driven renderers (for example Twig exports), list and table nodes now ex
 - `listItem.indent.{left,right,firstLine,hanging}`
 - `listItem.spacing.{before,after,line}`
 - `listItem.level.{indentLeft,indentHanging,tabStop,markerOffset}`
+- `listItem.resolvedLayout.marker.{format,text,start,suffix,justification,restart}`
 - `list.spacing.{before,after}` and `list.indent.left`
 - `table.indent.left`, `table.spacing.{before,after}`, `table.cellSpacing`, `table.layout`, `table.cellMargins`
+
+### Hybrid style strategy in public AST
+
+The AST uses a hybrid approach for stable HTML/PDF parity:
+
+- `styleRef` / `styleRefs` provide centralized references to paragraph/numbering/table/character styles
+- `resolvedLayout` keeps renderer-ready inline values (especially relevant for wkhtmltopdf consistency)
+- `styleProvenance` exposes per-field origin (`direct`, `style`, `basedOn`, `default`, `numberingLevel`, `rendererDefault`)
+
+Resolution priority is deterministic:
+
+1. direct node override (`document.xml`)
+2. referenced style (`styles.xml` / `numbering.xml`)
+3. `basedOn` chain
+4. document defaults
+5. renderer default
 
 ## Framework Integration
 

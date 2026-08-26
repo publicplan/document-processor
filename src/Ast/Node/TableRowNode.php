@@ -42,6 +42,7 @@ class TableRowNode extends AstNode
     {
         return [
             'type' => 'tableRow',
+            ...$this->styleContextToArray(),
             'isHeader' => $this->isHeader,
             'cells' => array_map(fn($c) => $c->toArray(), $this->cells),
             'metadata' => $this->metadataToArray(),

@@ -84,6 +84,7 @@ class ParagraphNode extends AstNode
     {
         return [
             'type' => 'paragraph',
+            ...$this->styleContextToArray(),
             'alignment' => $this->alignment,
             'indent' => [
                 'left' => $this->indentLeft,

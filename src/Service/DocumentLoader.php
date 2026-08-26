@@ -74,6 +74,71 @@ class DocumentLoader
     }
 
     /**
+     * Extrahiert style-relevante Snapshot-Daten aus styles.xml/numbering.xml für AST-Mapping.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function extractAstStyleSnapshot(string $filePath): ?array
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($filePath) !== true) {
+            return null;
+        }
+
+        try {
+            $snapshot = [
+                'styles' => [
+                    'paragraph' => [],
+                    'table' => [],
+                    'defaults' => [
+                        'paragraph' => [],
+                    ],
+                ],
+                'numbering' => [
+                    'numMap' => [],
+                    'levels' => [],
+                ],
+            ];
+
+            $stylesXml = $zip->getFromName('word/styles.xml');
+            if (is_string($stylesXml) && $stylesXml !== '') {
+                $stylesDoc = new DOMDocument();
+                $previous = libxml_use_internal_errors(true);
+                try {
+                    if ($stylesDoc->loadXML($stylesXml)) {
+                        $xpath = new DOMXPath($stylesDoc);
+                        $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+                        $snapshot['styles'] = $this->extractStylesSnapshot($xpath);
+                    }
+                } finally {
+                    libxml_clear_errors();
+                    libxml_use_internal_errors($previous);
+                }
+            }
+
+            $numberingXml = $zip->getFromName('word/numbering.xml');
+            if (is_string($numberingXml) && $numberingXml !== '') {
+                $numberingDoc = new DOMDocument();
+                $previous = libxml_use_internal_errors(true);
+                try {
+                    if ($numberingDoc->loadXML($numberingXml)) {
+                        $xpath = new DOMXPath($numberingDoc);
+                        $xpath->registerNamespace('w', 'http://schemas.openxmlformats.org/wordprocessingml/2006/main');
+                        $snapshot['numbering'] = $this->extractNumberingSnapshot($xpath);
+                    }
+                } finally {
+                    libxml_clear_errors();
+                    libxml_use_internal_errors($previous);
+                }
+            }
+
+            return $snapshot;
+        } finally {
+            $zip->close();
+        }
+    }
+
+    /**
      * Prüft, ob das Dokument nicht übernommene Änderungen (Track Changes) enthält.
      *
      * @param string $filePath Absoluter Pfad zur .docx Datei
@@ -268,11 +333,19 @@ class DocumentLoader
 
                 $indentation = [];
                 $left        = $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:left)', $styleNode));
+                $right       = $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:right)', $styleNode));
                 $hanging     = $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:hanging)', $styleNode));
                 $firstLine   = $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:firstLine)', $styleNode));
+                $spaceBefore = $this->readTwips($xpath->evaluate('string(w:pPr/w:spacing/@w:before)', $styleNode));
+                $spaceAfter  = $this->readTwips($xpath->evaluate('string(w:pPr/w:spacing/@w:after)', $styleNode));
+                $line        = $this->readTwips($xpath->evaluate('string(w:pPr/w:spacing/@w:line)', $styleNode));
+                $alignment   = trim((string)$xpath->evaluate('string(w:pPr/w:jc/@w:val)', $styleNode));
 
                 if ($left !== null) {
                     $indentation['left'] = $left;
+                }
+                if ($right !== null) {
+                    $indentation['right'] = $right;
                 }
                 if ($hanging !== null) {
                     $indentation['hanging'] = $hanging;
@@ -282,6 +355,18 @@ class DocumentLoader
                 }
                 if ($indentation !== []) {
                     $styleDefinition['indentation'] = $indentation;
+                }
+                if ($spaceBefore !== null) {
+                    $styleDefinition['spaceBefore'] = $spaceBefore;
+                }
+                if ($spaceAfter !== null) {
+                    $styleDefinition['spaceAfter'] = $spaceAfter;
+                }
+                if ($line !== null && $line > 0) {
+                    $styleDefinition['lineHeight'] = round($line / 240, 2);
+                }
+                if ($alignment !== '') {
+                    $styleDefinition['alignment'] = $alignment;
                 }
 
                 Style::addParagraphStyle($styleId, $styleDefinition);
@@ -325,6 +410,36 @@ class DocumentLoader
         ];
 
         $definition = [];
+        $alignment = trim((string)$xpath->evaluate('string(w:tblPr/w:jc/@w:val)', $styleNode));
+        if ($alignment !== '') {
+            $definition['alignment'] = $alignment;
+        }
+        $indent = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblInd/@w:w)', $styleNode));
+        if ($indent !== null) {
+            $definition['indent'] = $indent;
+        }
+        $cellSpacing = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellSpacing/@w:w)', $styleNode));
+        if ($cellSpacing !== null) {
+            $definition['cellSpacing'] = $cellSpacing;
+        }
+
+        $cellMarginTop = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:top/@w:w)', $styleNode));
+        $cellMarginRight = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:right/@w:w)', $styleNode));
+        $cellMarginBottom = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:bottom/@w:w)', $styleNode));
+        $cellMarginLeft = $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:left/@w:w)', $styleNode));
+        if ($cellMarginTop !== null) {
+            $definition['cellMarginTop'] = $cellMarginTop;
+        }
+        if ($cellMarginRight !== null) {
+            $definition['cellMarginRight'] = $cellMarginRight;
+        }
+        if ($cellMarginBottom !== null) {
+            $definition['cellMarginBottom'] = $cellMarginBottom;
+        }
+        if ($cellMarginLeft !== null) {
+            $definition['cellMarginLeft'] = $cellMarginLeft;
+        }
+
         foreach ($mapping as $wordSide => $suffix) {
             $border = $this->extractBorderNodeAttributes($xpath, sprintf('w:tblPr/w:tblBorders/w:%s', $wordSide), $styleNode);
             if ($border === null) {
@@ -363,6 +478,169 @@ class DocumentLoader
         }
 
         return $definition;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function extractStylesSnapshot(DOMXPath $xpath): array
+    {
+        $styles = [
+            'paragraph' => [],
+            'table' => [],
+            'defaults' => [
+                'paragraph' => [],
+            ],
+        ];
+
+        $defaultsNode = $xpath->query('/w:styles/w:docDefaults')?->item(0);
+        if ($defaultsNode instanceof \DOMNode) {
+            $styles['defaults']['paragraph'] = [
+                'alignment' => $this->readStringOrNull($xpath->evaluate('string(w:pPrDefault/w:pPr/w:jc/@w:val)', $defaultsNode)),
+                'indentLeft' => $this->readTwips($xpath->evaluate('string(w:pPrDefault/w:pPr/w:ind/@w:left)', $defaultsNode)),
+                'indentRight' => $this->readTwips($xpath->evaluate('string(w:pPrDefault/w:pPr/w:ind/@w:right)', $defaultsNode)),
+                'indentFirstLine' => $this->readTwips($xpath->evaluate('string(w:pPrDefault/w:pPr/w:ind/@w:firstLine)', $defaultsNode)),
+                'indentHanging' => $this->readTwips($xpath->evaluate('string(w:pPrDefault/w:pPr/w:ind/@w:hanging)', $defaultsNode)),
+                'spacingBefore' => $this->readTwips($xpath->evaluate('string(w:pPrDefault/w:pPr/w:spacing/@w:before)', $defaultsNode)),
+                'spacingAfter' => $this->readTwips($xpath->evaluate('string(w:pPrDefault/w:pPr/w:spacing/@w:after)', $defaultsNode)),
+                'line' => $this->readTwips($xpath->evaluate('string(w:pPrDefault/w:pPr/w:spacing/@w:line)', $defaultsNode)),
+            ];
+        }
+
+        $paragraphStyles = $xpath->query('//w:style[@w:type="paragraph"]');
+        if ($paragraphStyles !== false) {
+            foreach ($paragraphStyles as $styleNode) {
+                $styleId = trim((string)$xpath->evaluate('string(@w:styleId)', $styleNode));
+                if ($styleId === '') {
+                    continue;
+                }
+
+                $styles['paragraph'][$styleId] = [
+                    'styleId' => $styleId,
+                    'styleName' => $this->readStringOrNull($xpath->evaluate('string(w:name/@w:val)', $styleNode)),
+                    'basedOn' => $this->readStringOrNull($xpath->evaluate('string(w:basedOn/@w:val)', $styleNode)),
+                    'alignment' => $this->readStringOrNull($xpath->evaluate('string(w:pPr/w:jc/@w:val)', $styleNode)),
+                    'indentLeft' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:left)', $styleNode)),
+                    'indentRight' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:right)', $styleNode)),
+                    'indentFirstLine' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:firstLine)', $styleNode)),
+                    'indentHanging' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:hanging)', $styleNode)),
+                    'spacingBefore' => $this->readTwips($xpath->evaluate('string(w:pPr/w:spacing/@w:before)', $styleNode)),
+                    'spacingAfter' => $this->readTwips($xpath->evaluate('string(w:pPr/w:spacing/@w:after)', $styleNode)),
+                    'line' => $this->readTwips($xpath->evaluate('string(w:pPr/w:spacing/@w:line)', $styleNode)),
+                ];
+            }
+        }
+
+        $tableStyles = $xpath->query('//w:style[@w:type="table"]');
+        if ($tableStyles !== false) {
+            foreach ($tableStyles as $styleNode) {
+                $styleId = trim((string)$xpath->evaluate('string(@w:styleId)', $styleNode));
+                if ($styleId === '') {
+                    continue;
+                }
+
+                $styles['table'][$styleId] = [
+                    'styleId' => $styleId,
+                    'styleName' => $this->readStringOrNull($xpath->evaluate('string(w:name/@w:val)', $styleNode)),
+                    'basedOn' => $this->readStringOrNull($xpath->evaluate('string(w:basedOn/@w:val)', $styleNode)),
+                    'alignment' => $this->readStringOrNull($xpath->evaluate('string(w:tblPr/w:jc/@w:val)', $styleNode)),
+                    'indent' => $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblInd/@w:w)', $styleNode)),
+                    'cellSpacing' => $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellSpacing/@w:w)', $styleNode)),
+                    'layout' => $this->readStringOrNull($xpath->evaluate('string(w:tblPr/w:tblLayout/@w:type)', $styleNode)),
+                    'cellMargins' => [
+                        'top' => $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:top/@w:w)', $styleNode)),
+                        'right' => $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:right/@w:w)', $styleNode)),
+                        'bottom' => $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:bottom/@w:w)', $styleNode)),
+                        'left' => $this->readTwips($xpath->evaluate('string(w:tblPr/w:tblCellMar/w:left/@w:w)', $styleNode)),
+                    ],
+                ];
+            }
+        }
+
+        return $styles;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function extractNumberingSnapshot(DOMXPath $xpath): array
+    {
+        $numbering = [
+            'numMap' => [],
+            'levels' => [],
+        ];
+
+        $numNodes = $xpath->query('/w:numbering/w:num');
+        if ($numNodes !== false) {
+            foreach ($numNodes as $numNode) {
+                $numId = $this->readIntOrNull($xpath->evaluate('string(@w:numId)', $numNode));
+                if ($numId === null) {
+                    continue;
+                }
+
+                $numbering['numMap'][(string)$numId] = [
+                    'numId' => $numId,
+                    'abstractNumId' => $this->readIntOrNull($xpath->evaluate('string(w:abstractNumId/@w:val)', $numNode)),
+                ];
+            }
+        }
+
+        $abstractNodes = $xpath->query('/w:numbering/w:abstractNum');
+        if ($abstractNodes !== false) {
+            foreach ($abstractNodes as $abstractNode) {
+                $abstractNumId = $this->readIntOrNull($xpath->evaluate('string(@w:abstractNumId)', $abstractNode));
+                if ($abstractNumId === null) {
+                    continue;
+                }
+
+                $levels = [];
+                $levelNodes = $xpath->query('w:lvl', $abstractNode);
+                if ($levelNodes !== false) {
+                    foreach ($levelNodes as $levelNode) {
+                        $level = $this->readIntOrNull($xpath->evaluate('string(@w:ilvl)', $levelNode));
+                        if ($level === null) {
+                            continue;
+                        }
+
+                        $levels[(string)$level] = [
+                            'level' => $level,
+                            'start' => $this->readIntOrNull($xpath->evaluate('string(w:start/@w:val)', $levelNode)),
+                            'format' => $this->readStringOrNull($xpath->evaluate('string(w:numFmt/@w:val)', $levelNode)),
+                            'text' => $this->readStringOrNull($xpath->evaluate('string(w:lvlText/@w:val)', $levelNode)),
+                            'suffix' => $this->readStringOrNull($xpath->evaluate('string(w:suff/@w:val)', $levelNode)),
+                            'alignment' => $this->readStringOrNull($xpath->evaluate('string(w:lvlJc/@w:val)', $levelNode)),
+                            'restart' => $this->readIntOrNull($xpath->evaluate('string(w:lvlRestart/@w:val)', $levelNode)),
+                            'left' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:left)', $levelNode)),
+                            'hanging' => $this->readTwips($xpath->evaluate('string(w:pPr/w:ind/@w:hanging)', $levelNode)),
+                            'tabStop' => $this->readTwips($xpath->evaluate('string(w:pPr/w:tabs/w:tab/@w:pos)', $levelNode)),
+                        ];
+                    }
+                }
+
+                $numbering['levels'][(string)$abstractNumId] = $levels;
+            }
+        }
+
+        return $numbering;
+    }
+
+    private function readIntOrNull(mixed $rawValue): ?int
+    {
+        if (!is_string($rawValue) || $rawValue === '' || !is_numeric($rawValue)) {
+            return null;
+        }
+
+        return (int)$rawValue;
+    }
+
+    private function readStringOrNull(mixed $rawValue): ?string
+    {
+        if (!is_string($rawValue)) {
+            return null;
+        }
+
+        $value = trim($rawValue);
+        return $value === '' ? null : $value;
     }
 
     private function extractBorderNodeAttributes(DOMXPath $xpath, string $query, \DOMNode $contextNode): ?array

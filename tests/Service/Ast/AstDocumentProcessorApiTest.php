@@ -183,6 +183,11 @@ class AstDocumentProcessorApiTest extends TestCase
         $this->assertEqualsWithDelta(0.42, $item['spacing']['before'], 0.01);
         $this->assertEqualsWithDelta(0.85, $item['spacing']['after'], 0.01);
         $this->assertSame(1.5, $item['spacing']['line']);
+        $this->assertArrayHasKey('styleRefs', $item);
+        $this->assertArrayHasKey('numbering', $item['styleRefs']);
+        $this->assertArrayHasKey('resolvedLayout', $item);
+        $this->assertArrayHasKey('marker', $item['resolvedLayout']);
+        $this->assertArrayHasKey('styleProvenance', $item);
     }
 
     public function test_process_to_html_preserves_center_and_justify_alignment(): void
@@ -299,6 +304,49 @@ class AstDocumentProcessorApiTest extends TestCase
         $this->assertArrayHasKey('cellSpacing', $tableNode);
         $this->assertArrayHasKey('layout', $tableNode);
         $this->assertArrayHasKey('cellMargins', $tableNode);
+        $this->assertArrayHasKey('styleRefs', $tableNode);
+        $this->assertArrayHasKey('table', $tableNode['styleRefs']);
+        $this->assertArrayHasKey('resolvedLayout', $tableNode);
+        $this->assertArrayHasKey('styleProvenance', $tableNode);
+    }
+
+    public function test_process_to_ast_exposes_paragraph_style_refs_and_based_on_chain(): void
+    {
+        $phpWord = new PhpWord();
+        $phpWord->addParagraphStyle('BaseParagraphStyle', [
+            'spaceAfter' => 480,
+        ]);
+        $phpWord->addParagraphStyle('ChildParagraphStyle', [
+            'basedOn' => 'BaseParagraphStyle',
+        ]);
+
+        $section = $phpWord->addSection();
+        $section->addText('Styled paragraph', [], 'ChildParagraphStyle');
+
+        $filePath = tempnam(sys_get_temp_dir(), 'ast-par-style-');
+        if ($filePath === false) {
+            $this->fail('Temp file could not be created.');
+        }
+        $docxPath = $filePath . '.docx';
+        unlink($filePath);
+        IOFactory::createWriter($phpWord, 'Word2007')->save($docxPath);
+
+        try {
+            $processor = new AstDocumentProcessor(new DocumentLoader());
+            $result = $processor->processToAst($docxPath, 'paragraph-style.docx');
+
+            $firstNode = $result->ast['sections'][0]['paragraphs'][0];
+            $paragraph = ($firstNode['type'] ?? null) === 'borderGroup'
+                ? ($firstNode['children'][0] ?? [])
+                : $firstNode;
+            $this->assertSame('paragraph', $paragraph['type']);
+            $this->assertSame('ChildParagraphStyle', $paragraph['styleRefs']['paragraph']['styleId'] ?? null);
+            $this->assertContains('BaseParagraphStyle', $paragraph['styleRefs']['paragraph']['basedOnChain'] ?? []);
+            $this->assertArrayHasKey('styleProvenance', $paragraph);
+            $this->assertArrayHasKey('spacing.after', $paragraph['styleProvenance']);
+        } finally {
+            @unlink($docxPath);
+        }
     }
 
     public function test_paragraph_spacing_before_renders_as_margin_top(): void

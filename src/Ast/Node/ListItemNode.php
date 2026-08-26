@@ -146,6 +146,7 @@ class ListItemNode extends AstNode
     {
         return [
             'type' => 'listItem',
+            ...$this->styleContextToArray(),
             'numId' => $this->numId,
             'depth' => $this->depth,
             'numFormat' => $this->numFormat->value,

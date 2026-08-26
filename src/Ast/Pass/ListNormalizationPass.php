@@ -155,11 +155,28 @@ class ListNormalizationPass implements AstPass
         $first = $items[0] ?? null;
         $last = $items[count($items) - 1] ?? null;
 
-        return new ListNode(
+        $node = new ListNode(
             items: $items,
             spacingBefore: $first instanceof ListItemNode ? $first->getSpacingBefore() : null,
             spacingAfter: $last instanceof ListItemNode ? $last->getSpacingAfter() : null,
             indentLeft: $first instanceof ListItemNode ? $first->getIndentLeft() : null
         );
+
+        if ($first instanceof ListItemNode) {
+            $node
+                ->setStyleRefs($first->getStyleRefs())
+                ->setStyleProvenance($first->getStyleProvenance())
+                ->setResolvedLayout([
+                    'spacing' => [
+                        'before' => $first->getSpacingBefore(),
+                        'after' => $last instanceof ListItemNode ? $last->getSpacingAfter() : null,
+                    ],
+                    'indent' => [
+                        'left' => $first->getIndentLeft(),
+                    ],
+                ]);
+        }
+
+        return $node;
     }
 }

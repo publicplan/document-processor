@@ -90,6 +90,7 @@ class TableNode extends AstNode
     {
         return [
             'type' => 'table',
+            ...$this->styleContextToArray(),
             'width' => $this->width,
             'widthUnit' => $this->widthUnit,
             'alignment' => $this->alignment,

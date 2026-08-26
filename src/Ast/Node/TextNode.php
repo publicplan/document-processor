@@ -65,6 +65,7 @@ class TextNode extends AstNode
     {
         return [
             'type' => 'text',
+            ...$this->styleContextToArray(),
             'content' => $this->content,
             'formatting' => [
                 'bold' => $this->bold,

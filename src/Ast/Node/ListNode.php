@@ -54,6 +54,7 @@ class ListNode extends AstNode
     {
         return [
             'type' => 'list',
+            ...$this->styleContextToArray(),
             'spacing' => [
                 'before' => $this->spacingBefore,
                 'after' => $this->spacingAfter,

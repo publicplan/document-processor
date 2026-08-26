@@ -164,6 +164,7 @@ final class AstDocumentProcessor
             $context = new ConversionContext();
             $context->setDefaultFontSize($defaultFontSize);
             $context->setRemoveDeletedContent($processingOptions->removeDeletedContent);
+            $context->setStyleSnapshot($this->documentLoader->extractAstStyleSnapshot($filePath));
 
             $ast           = $this->astConverter->convert($loadedDocument, $context);
             $normalization = $this->normalizationPipeline->normalize($ast);

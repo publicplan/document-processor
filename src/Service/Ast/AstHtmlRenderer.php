@@ -143,6 +143,9 @@ final class AstHtmlRenderer
         }
 
         $styleAttr = sprintf(' style="%s"', implode(' ', $styles));
+        if ($insideBorderGroup) {
+            $styleAttr = str_replace('style="', 'style=" ', $styleAttr);
+        }
 
         return sprintf('<p%s>%s</p>%s', $styleAttr, trim($text), PHP_EOL);
     }
@@ -172,7 +175,32 @@ final class AstHtmlRenderer
             docxListId: $docxListId
         );
 
-        $html = $config->renderStartTag($startOverride) . PHP_EOL;
+        $listStyles = [];
+        $resolvedLayout = $list->getResolvedLayout();
+        $spacingBefore = is_array($resolvedLayout) ? ($resolvedLayout['spacing']['before'] ?? null) : $list->getSpacingBefore();
+        $spacingAfter = is_array($resolvedLayout) ? ($resolvedLayout['spacing']['after'] ?? null) : $list->getSpacingAfter();
+        $indentLeft = is_array($resolvedLayout) ? ($resolvedLayout['indent']['left'] ?? null) : $list->getIndentLeft();
+        if (is_numeric($spacingBefore) && (float)$spacingBefore > 0) {
+            $listStyles[] = sprintf('margin-top: %scm;', $spacingBefore);
+        }
+        if (is_numeric($spacingAfter) && (float)$spacingAfter > 0) {
+            $listStyles[] = sprintf('margin-bottom: %scm;', $spacingAfter);
+        }
+        if (is_numeric($indentLeft) && (float)$indentLeft > 0) {
+            $listStyles[] = sprintf('margin-left: %scm;', $indentLeft);
+        }
+
+        $listStartTag = $config->renderStartTag($startOverride);
+        if ($listStyles !== []) {
+            $listStartTag = preg_replace(
+                '/<(ul|ol)([^>]*)>/',
+                sprintf('<$1$2 style="%s">', implode(' ', $listStyles)),
+                $listStartTag,
+                1
+            ) ?? $listStartTag;
+        }
+
+        $html = $listStartTag . PHP_EOL;
         foreach ($items as $item) {
             $html .= $this->renderListItem($item);
         }
@@ -192,8 +220,16 @@ final class AstHtmlRenderer
             return '';
         }
 
-        $styleAttr = '';
         $styles = [];
+        $resolvedLayout = $item->getResolvedLayout();
+        $indentLeft = is_array($resolvedLayout) ? ($resolvedLayout['indent']['left'] ?? null) : $item->getIndentLeft();
+        $spacingAfter = is_array($resolvedLayout) ? ($resolvedLayout['spacing']['after'] ?? null) : $item->getSpacingAfter();
+        if (is_numeric($indentLeft) && (float)$indentLeft > 0) {
+            $styles[] = sprintf('margin-left: %scm;', $indentLeft);
+        }
+        if (is_numeric($spacingAfter) && (float)$spacingAfter > 0) {
+            $styles[] = sprintf('margin-bottom: %scm;', $spacingAfter);
+        }
 
         $liHtml = '<li';
         if (!empty($styles)) {
@@ -241,6 +277,27 @@ final class AstHtmlRenderer
 
         $tableBorderStyle = $this->extractTableBorderContextFromNode($table);
         $tableStyles = [];
+        $tableLayout = $table->getResolvedLayout();
+        $indentLeft = is_array($tableLayout) ? ($tableLayout['indent']['left'] ?? null) : $table->getIndentLeft();
+        $spacingBefore = is_array($tableLayout) ? ($tableLayout['spacing']['before'] ?? null) : $table->getSpacingBefore();
+        $spacingAfter = is_array($tableLayout) ? ($tableLayout['spacing']['after'] ?? null) : $table->getSpacingAfter();
+        $cellSpacing = is_array($tableLayout) ? ($tableLayout['cellSpacing'] ?? null) : $table->getCellSpacing();
+        $layout = is_array($tableLayout) ? ($tableLayout['layout'] ?? null) : $table->getLayout();
+        if (is_numeric($indentLeft) && (float)$indentLeft > 0) {
+            $tableStyles[] = sprintf('margin-left: %scm;', $indentLeft);
+        }
+        if (is_numeric($spacingBefore) && (float)$spacingBefore > 0) {
+            $tableStyles[] = sprintf('margin-top: %scm;', $spacingBefore);
+        }
+        if (is_numeric($spacingAfter) && (float)$spacingAfter > 0) {
+            $tableStyles[] = sprintf('margin-bottom: %scm;', $spacingAfter);
+        }
+        if (is_numeric($cellSpacing) && (float)$cellSpacing > 0) {
+            $tableStyles[] = sprintf('border-spacing: %scm;', $cellSpacing);
+        }
+        if (is_string($layout) && $layout !== '') {
+            $tableStyles[] = sprintf('table-layout: %s;', $layout === 'fixed' ? 'fixed' : 'auto');
+        }
         if ($this->hasAnyTableBorder($tableBorderStyle)) {
             $tableStyles[] = 'border-collapse: collapse;';
             $outerBorderStyles = $this->buildBorderCss($tableBorderStyle['outer'] ?? []);
@@ -268,6 +325,7 @@ final class AstHtmlRenderer
                 $styles = [];
 
                 $cellStyle = $cell->getResolvedStyle();
+                $cellLayout = $cell->getResolvedLayout();
                 $backgroundColor = is_array($cellStyle) && is_string($cellStyle['backgroundColor'] ?? null)
                     ? BorderStyleHelper::formatCssHexColor($cellStyle['backgroundColor'])
                     : null;
@@ -287,6 +345,22 @@ final class AstHtmlRenderer
                 $borderStyles = $this->buildBorderCss($effectiveBorders);
                 if ($borderStyles !== '') {
                     $styles[] = $borderStyles;
+                }
+                if (is_array($cellLayout)) {
+                    $verticalAlign = $cellLayout['verticalAlign'] ?? null;
+                    if (is_string($verticalAlign) && $verticalAlign !== '') {
+                        $styles[] = sprintf('vertical-align: %s;', $verticalAlign);
+                    }
+                    $margins = is_array($cellLayout['margins'] ?? null) ? $cellLayout['margins'] : null;
+                    if ($margins !== null) {
+                        $top = is_numeric($margins['top'] ?? null) ? (float)$margins['top'] : 0.0;
+                        $right = is_numeric($margins['right'] ?? null) ? (float)$margins['right'] : 0.0;
+                        $bottom = is_numeric($margins['bottom'] ?? null) ? (float)$margins['bottom'] : 0.0;
+                        $left = is_numeric($margins['left'] ?? null) ? (float)$margins['left'] : 0.0;
+                        if ($top > 0 || $right > 0 || $bottom > 0 || $left > 0) {
+                            $styles[] = sprintf('padding: %scm %scm %scm %scm;', $top, $right, $bottom, $left);
+                        }
+                    }
                 }
 
                 $html .= sprintf(
@@ -313,6 +387,11 @@ final class AstHtmlRenderer
 
     private function renderTextBox(TextBoxNode $box): string
     {
+        $legacyHtml = $box->getRenderHints()->getHint('legacy_html');
+        if (is_string($legacyHtml) && $legacyHtml !== '') {
+            return $legacyHtml;
+        }
+
         $content = '';
         foreach ($box->getChildren() as $child) {
             if ($child instanceof AstNode) {
@@ -578,11 +657,15 @@ final class AstHtmlRenderer
     private function extractTableBorderContextFromNode(TableNode $table): ?array
     {
         $style = $table->getResolvedStyle();
-        if (!is_array($style)) {
-            return null;
+        if (is_array($style)) {
+            $borders = $style['borders'] ?? null;
+            if (is_array($borders)) {
+                return $borders;
+            }
         }
 
-        $borders = $style['borders'] ?? null;
+        $layout = $table->getResolvedLayout();
+        $borders = is_array($layout) ? ($layout['borders'] ?? null) : null;
         return is_array($borders) ? $borders : null;
     }
 
