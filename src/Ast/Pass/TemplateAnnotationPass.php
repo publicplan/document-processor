@@ -24,6 +24,7 @@ use Publicplan\DocumentProcessor\Ast\Node\TableRowNode;
 use Publicplan\DocumentProcessor\Ast\Node\TabNode;
 use Publicplan\DocumentProcessor\Ast\Node\TextBoxNode;
 use Publicplan\DocumentProcessor\Ast\Node\TextNode;
+use Publicplan\DocumentProcessor\Ast\Metadata\TrackChangeType;
 use Publicplan\DocumentProcessor\Service\Ast\Template\DetectedTemplateFragment;
 use Publicplan\DocumentProcessor\Service\Ast\Template\TemplateSyntaxProfile;
 
@@ -65,6 +66,11 @@ final class TemplateAnnotationPass implements AstPass
 
     private function annotateBlockNode(AstNode $node, int $sectionIndex, int $elementIndex, string $path): void
     {
+        // Gelöschte RevisionNodes sollten nicht annotiert werden
+        if ($node instanceof RevisionNode && $node->getChangeType() === TrackChangeType::Deleted) {
+            return;
+        }
+
         if ($node instanceof ParagraphNode) {
             $this->annotateInlineSequence($node->getChildren(), $sectionIndex, $elementIndex, $path . '.children');
             return;
@@ -81,8 +87,16 @@ final class TemplateAnnotationPass implements AstPass
             || $node instanceof TabNode
             || $node instanceof FieldTextNode
             || $node instanceof FormatNode
-            || $node instanceof RevisionNode
             || $node instanceof ScaleNode) {
+            $this->annotateInlineSequence([$node], $sectionIndex, $elementIndex, $path . '.inline');
+            return;
+        }
+
+        // Gelöschte RevisionNodes auf Inline-Ebene auch ignorieren
+        if ($node instanceof RevisionNode) {
+            if ($node->getChangeType() === TrackChangeType::Deleted) {
+                return;
+            }
             $this->annotateInlineSequence([$node], $sectionIndex, $elementIndex, $path . '.inline');
             return;
         }
@@ -140,12 +154,37 @@ final class TemplateAnnotationPass implements AstPass
             return;
         }
 
+        // Filter Fragments die in gelöschten Tokens landen
+        $fragments = array_filter($fragments, function ($fragment) use ($tokens) {
+            foreach ($tokens as $token) {
+                // Fragment wird mit diesem Token annotiert
+                if ($token['end'] <= $fragment->startOffset || $token['start'] >= $fragment->endOffset) {
+                    continue;
+                }
+
+                // Wenn dieses Token gelöscht ist, ignoriere das Fragment
+                if ($token['deleted']) {
+                    return false;
+                }
+            }
+            return true;
+        });
+
+        if ($fragments === []) {
+            return;
+        }
+
         $tokenAnnotations = [];
         foreach ($fragments as $fragment) {
             $matchId = sprintf('template-%d', ++$this->matchSequence);
 
             foreach ($tokens as $index => $token) {
                 if ($token['end'] <= $fragment->startOffset || $token['start'] >= $fragment->endOffset) {
+                    continue;
+                }
+
+                // Fragment sollte nicht in gelöschten Tokens sein (doppelte Prüfung für Sicherheit)
+                if ($token['deleted']) {
                     continue;
                 }
 
@@ -167,7 +206,7 @@ final class TemplateAnnotationPass implements AstPass
      * @param AstNode[] $nodes
      * @return list<array{node: AstNode, text: string, start: int, end: int, path: string}>
      */
-    private function collectInlineTokens(array $nodes, string $path): array
+    private function collectInlineTokens(array $nodes, string $path, bool $deletedContext = false): array
     {
         $tokens = [];
         $offset = 0;
@@ -177,7 +216,7 @@ final class TemplateAnnotationPass implements AstPass
                 continue;
             }
 
-            foreach ($this->collectInlineTokensFromNode($node, $path . "[$index]") as $entry) {
+            foreach ($this->collectInlineTokensFromNode($node, $path . "[$index]", $deletedContext) as $entry) {
                 $length = strlen($entry['text']);
                 if ($length === 0) {
                     continue;
@@ -189,6 +228,7 @@ final class TemplateAnnotationPass implements AstPass
                     'start' => $offset,
                     'end' => $offset + $length,
                     'path' => $entry['path'],
+                    'deleted' => $entry['deleted'],
                 ];
                 $offset += $length;
             }
@@ -200,18 +240,23 @@ final class TemplateAnnotationPass implements AstPass
     /**
      * @return list<array{node: AstNode, text: string, path: string}>
      */
-    private function collectInlineTokensFromNode(AstNode $node, string $path): array
+    private function collectInlineTokensFromNode(AstNode $node, string $path, bool $deletedContext = false): array
     {
         if ($node instanceof TextNode) {
-            return [['node' => $node, 'text' => $node->getContent(), 'path' => $path]];
+            return [[
+                'node' => $node,
+                'text' => $node->getContent(),
+                'path' => $path,
+                'deleted' => $deletedContext || $node->getTrackChange() === TrackChangeType::Deleted,
+            ]];
         }
 
         if ($node instanceof TabNode) {
-            return [['node' => $node, 'text' => "\t", 'path' => $path]];
+            return [['node' => $node, 'text' => "\t", 'path' => $path, 'deleted' => $deletedContext]];
         }
 
         if ($node instanceof BreakNode) {
-            return [['node' => $node, 'text' => "\n", 'path' => $path]];
+            return [['node' => $node, 'text' => "\n", 'path' => $path, 'deleted' => $deletedContext]];
         }
 
         if ($node instanceof FieldTextNode) {
@@ -219,11 +264,17 @@ final class TemplateAnnotationPass implements AstPass
                 'node' => $node,
                 'text' => $node->getFieldResult() ?? $node->getFieldCode(),
                 'path' => $path,
+                'deleted' => $deletedContext,
             ]];
         }
 
         if ($node instanceof LinkNode || $node instanceof FormatNode || $node instanceof RevisionNode || $node instanceof ScaleNode) {
-            return $this->collectInlineTokens($node->getChildren(), $path . '.children');
+            $nextDeletedContext = $deletedContext;
+            if ($node instanceof RevisionNode) {
+                $nextDeletedContext = $deletedContext || $node->getChangeType() === TrackChangeType::Deleted;
+            }
+
+            return $this->collectInlineTokens($node->getChildren(), $path . '.children', $nextDeletedContext);
         }
 
         return [];
