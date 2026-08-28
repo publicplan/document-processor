@@ -114,6 +114,11 @@ class AstDocumentProcessorApiTest extends TestCase
         $this->assertSame('placeholder', $annotation['kind']);
         $this->assertSame('complete', $annotation['status']);
         $this->assertSame('{{kunde}}', $annotation['raw']);
+        $this->assertSame('{{kunde}}', $annotation['normalizedRaw']);
+        $this->assertSame(['start' => 6, 'end' => 15], $annotation['fragmentRange']);
+        $this->assertSame(['start' => 6, 'end' => 15], $annotation['sliceRange']);
+        $this->assertSame('kunde', $annotation['fragment']['inner']);
+        $this->assertTrue($annotation['fragment']['isComplete']);
     }
 
     public function test_process_to_html_simplifies_adjacent_identical_inline_tags(): void

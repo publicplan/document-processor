@@ -52,6 +52,10 @@ final class GenericTemplateSyntaxProfile implements TemplateSyntaxProfile
             $role = $candidate['kind'] === 'control'
                 ? $this->detectControlRole($inner)
                 : null;
+            $normalizedInner = trim((string)preg_replace('/\s+/u', ' ', $inner));
+            $normalizedRaw = $closePosition === false
+                ? $this->normalizeRaw(substr($inlineSequence, $start))
+                : $this->normalizeRaw(substr($inlineSequence, $start, $end - $start));
 
             if ($status === 'complete' && trim($inner) === '') {
                 $status = 'malformed';
@@ -68,6 +72,11 @@ final class GenericTemplateSyntaxProfile implements TemplateSyntaxProfile
                 endOffset: $end,
                 raw: $raw,
                 role: $role,
+                openDelimiter: $open,
+                closeDelimiter: $close,
+                inner: $inner,
+                normalizedRaw: $normalizedRaw,
+                normalizedInner: $normalizedInner,
             );
 
             $cursor = max($end, $start + strlen($open));
@@ -127,5 +136,10 @@ final class GenericTemplateSyntaxProfile implements TemplateSyntaxProfile
         }
 
         return null;
+    }
+
+    private function normalizeRaw(string $raw): string
+    {
+        return trim((string)preg_replace('/\s+/u', ' ', $raw));
     }
 }

@@ -154,41 +154,24 @@ final class TemplateAnnotationPass implements AstPass
             return;
         }
 
-        // Filter Fragments die in gelöschten Tokens landen
-        $fragments = array_filter($fragments, function ($fragment) use ($tokens) {
-            foreach ($tokens as $token) {
-                // Fragment wird mit diesem Token annotiert
-                if ($token['end'] <= $fragment->startOffset || $token['start'] >= $fragment->endOffset) {
-                    continue;
-                }
-
-                // Wenn dieses Token gelöscht ist, ignoriere das Fragment
-                if ($token['deleted']) {
-                    return false;
-                }
-            }
-            return true;
-        });
-
-        if ($fragments === []) {
-            return;
-        }
-
         $tokenAnnotations = [];
         foreach ($fragments as $fragment) {
+            $coveredTokenIndexes = $this->collectFragmentTokenIndexes($fragment, $tokens);
+            if ($coveredTokenIndexes === []) {
+                continue;
+            }
+
             $matchId = sprintf('template-%d', ++$this->matchSequence);
+            $partCount = count($coveredTokenIndexes);
 
-            foreach ($tokens as $index => $token) {
-                if ($token['end'] <= $fragment->startOffset || $token['start'] >= $fragment->endOffset) {
-                    continue;
-                }
-
-                // Fragment sollte nicht in gelöschten Tokens sein (doppelte Prüfung für Sicherheit)
-                if ($token['deleted']) {
-                    continue;
-                }
-
-                $tokenAnnotations[$index][] = $this->buildTokenAnnotation($matchId, $fragment, $token);
+            foreach ($coveredTokenIndexes as $partIndex => $index) {
+                $tokenAnnotations[$index][] = $this->buildTokenAnnotation(
+                    matchId: $matchId,
+                    fragment: $fragment,
+                    token: $tokens[$index],
+                    partIndex: $partIndex,
+                    partCount: $partCount
+                );
             }
         }
 
@@ -238,6 +221,29 @@ final class TemplateAnnotationPass implements AstPass
     }
 
     /**
+     * @param list<array{node: AstNode, text: string, start: int, end: int, path: string, deleted: bool}> $tokens
+     * @return list<int>
+     */
+    private function collectFragmentTokenIndexes(DetectedTemplateFragment $fragment, array $tokens): array
+    {
+        $coveredTokenIndexes = [];
+
+        foreach ($tokens as $index => $token) {
+            if ($token['end'] <= $fragment->startOffset || $token['start'] >= $fragment->endOffset) {
+                continue;
+            }
+
+            if ($token['deleted']) {
+                return [];
+            }
+
+            $coveredTokenIndexes[] = $index;
+        }
+
+        return $coveredTokenIndexes;
+    }
+
+    /**
      * @return list<array{node: AstNode, text: string, path: string}>
      */
     private function collectInlineTokensFromNode(AstNode $node, string $path, bool $deletedContext = false): array
@@ -282,12 +288,20 @@ final class TemplateAnnotationPass implements AstPass
 
     /**
      * @param array{node: AstNode, text: string, start: int, end: int, path: string} $token
+     * @param int $partIndex
+     * @param int $partCount
      * @return array<string, mixed>
      */
-    private function buildTokenAnnotation(string $matchId, DetectedTemplateFragment $fragment, array $token): array
+    private function buildTokenAnnotation(string $matchId, DetectedTemplateFragment $fragment, array $token, int $partIndex, int $partCount): array
     {
         $nodeStart = max(0, $fragment->startOffset - $token['start']);
         $nodeEnd = min($token['end'], $fragment->endOffset) - $token['start'];
+        $sliceStart = max($fragment->startOffset, $token['start']);
+        $sliceEnd = min($fragment->endOffset, $token['end']);
+        $leadingLiteralLength = $nodeStart;
+        $trailingLiteralLength = strlen($token['text']) - $nodeEnd;
+        $normalizedRaw = $fragment->normalizedRaw ?? $this->normalizeRaw($fragment->raw);
+        $normalizedInner = $fragment->normalizedInner ?? trim((string)preg_replace('/\s+/u', ' ', $fragment->inner ?? ''));
 
         return [
             'matchId' => $matchId,
@@ -296,16 +310,65 @@ final class TemplateAnnotationPass implements AstPass
             'role' => $fragment->role,
             'status' => $fragment->status,
             'raw' => $fragment->raw,
+            'normalizedRaw' => $normalizedRaw,
+            'normalizedInner' => $normalizedInner !== '' ? $normalizedInner : null,
+            'fragmentRange' => [
+                'start' => $fragment->startOffset,
+                'end' => $fragment->endOffset,
+            ],
             'isContinuation' => $fragment->startOffset < $token['start'],
+            'isStart' => $partIndex === 0,
+            'isEnd' => $partIndex === $partCount - 1,
+            'partIndex' => $partIndex,
+            'partCount' => $partCount,
+            'hasLeadingLiteral' => $leadingLiteralLength > 0,
+            'hasTrailingLiteral' => $trailingLiteralLength > 0,
+            'leadingLiteralLength' => $leadingLiteralLength,
+            'trailingLiteralLength' => $trailingLiteralLength,
             'sequenceRange' => [
                 'start' => $fragment->startOffset,
                 'end' => $fragment->endOffset,
+            ],
+            'sliceRange' => [
+                'start' => $sliceStart,
+                'end' => $sliceEnd,
             ],
             'nodeRange' => [
                 'start' => $nodeStart,
                 'end' => $nodeEnd,
             ],
+            'fragment' => [
+                'openDelimiter' => $fragment->openDelimiter,
+                'closeDelimiter' => $fragment->closeDelimiter,
+                'inner' => $fragment->inner,
+                'normalizedInner' => $normalizedInner !== '' ? $normalizedInner : null,
+                'normalizedRaw' => $normalizedRaw,
+                'hasClosingDelimiter' => $fragment->status !== 'malformed' || $fragment->closeDelimiter !== null,
+                'isComplete' => $fragment->status === 'complete',
+            ],
+            'slice' => [
+                'sequenceRange' => [
+                    'start' => $sliceStart,
+                    'end' => $sliceEnd,
+                ],
+                'nodeRange' => [
+                    'start' => $nodeStart,
+                    'end' => $nodeEnd,
+                ],
+                'partIndex' => $partIndex,
+                'partCount' => $partCount,
+                'isStart' => $partIndex === 0,
+                'isEnd' => $partIndex === $partCount - 1,
+                'isContinuation' => $fragment->startOffset < $token['start'],
+                'hasLeadingLiteral' => $leadingLiteralLength > 0,
+                'hasTrailingLiteral' => $trailingLiteralLength > 0,
+            ],
         ];
+    }
+
+    private function normalizeRaw(string $raw): string
+    {
+        return trim((string)preg_replace('/\s+/u', ' ', $raw));
     }
 
     /**

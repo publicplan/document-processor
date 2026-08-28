@@ -76,10 +76,20 @@ Each stored annotation contains:
 - `role`
 - `status`
 - `raw`
+- `normalizedRaw`
+- `normalizedInner`
+- `fragmentRange`
 - `sequenceRange`
+- `sliceRange`
 - `nodeRange`
+- `partIndex` / `partCount`
+- `isStart` / `isEnd`
+- `hasLeadingLiteral` / `hasTrailingLiteral`
+- `fragment.openDelimiter` / `fragment.closeDelimiter`
+- `fragment.inner` / `fragment.normalizedInner`
+- `fragment.normalizedRaw`
 
-`sequenceRange` points to the full fragment in the flattened inline sequence. `nodeRange` points to the covered slice within the individual AST node. This keeps split placeholders traceable across multiple text nodes.
+`fragmentRange` / `sequenceRange` point to the full fragment in the flattened inline sequence. `sliceRange` and `nodeRange` point to the covered slice within the sequence and the individual AST node. `partIndex` and `partCount` make multi-part fragments stable without reconstructing them from the raw text. `hasLeadingLiteral` and `hasTrailingLiteral` explicitly mark extra literal content around the fragment inside the same node.
 
 ## Bundled reference profile
 
@@ -101,6 +111,8 @@ Control fragments are additionally classified by their normalized leading keywor
 Fragments with an opening delimiter but no closing delimiter are still returned as `malformed`. The library does not repair, balance, validate or interpret such fragments.
 
 For the default delimiters, empty content (for example `{{ }}`) and non-interpretable control expressions (for example `{% Leerzeile löschen %}`) are marked as `malformed`.
+
+The generic profile also normalizes raw fragments by collapsing repeated whitespace inside the detected tag, so consumers can compare `normalizedRaw` instead of slicing the source text themselves.
 
 Functions are not modeled as a separate `kind` in the reference profile. They are simply part of the enclosing placeholder or control fragment.
 

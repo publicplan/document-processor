@@ -73,7 +73,7 @@ $annotatedAst = $astProcessor->processToAst(
     new ProcessingOptions(templateSyntaxProfile: new GenericTemplateSyntaxProfile())
 );
 
-$astVersion = $astOnly->astVersion; // currently "1.5.0"
+$astVersion = $astOnly->astVersion; // currently "1.6.0"
 $ast = $astOnly->ast;               // public AST contract (no renderer internals)
 $htmlFromAstRoute = $astAndHtml->html;
 ```
@@ -98,6 +98,7 @@ The AST route can optionally annotate placeholder and control syntax without eva
 - Control fragments inside `{% ... %}` are additionally classified as `when`, `else_if`, `else` or `end` when they start with `wenn`, `sonst wenn`, `sonst` or `ende`.
 - Incomplete fragments are preserved and marked as `malformed`.
 - Detected fragments are exposed on `metadata.sourceRef.xmlAttributes.templateAnnotations`.
+- Each annotation now also carries `fragmentRange`, `sliceRange`, `partIndex`, `partCount`, `isStart`, `isEnd`, `normalizedRaw`, and explicit literal-boundary flags for split fragments.
 
 Example:
 

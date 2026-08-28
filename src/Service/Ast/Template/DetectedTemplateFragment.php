@@ -13,6 +13,11 @@ readonly class DetectedTemplateFragment
         public int $endOffset,
         public string $raw,
         public ?string $role = null,
+        public ?string $openDelimiter = null,
+        public ?string $closeDelimiter = null,
+        public ?string $inner = null,
+        public ?string $normalizedRaw = null,
+        public ?string $normalizedInner = null,
     ) {
     }
 }

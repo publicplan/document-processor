@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Template annotations now expose explicit fragment boundaries and stable slice metadata:
+  - `fragmentRange` / `sequenceRange`
+  - `sliceRange` / `nodeRange`
+  - `partIndex`, `partCount`, `isStart`, `isEnd`
+  - `normalizedRaw`, `normalizedInner`
+  - `hasLeadingLiteral`, `hasTrailingLiteral`
 - Öffentlicher AST-Contract erweitert um dokumentweiten Basis-Schriftgrößenwert:
   - `document.baseFontSizePt` (immer gesetzt)
   - `document.baseFontSizeSource` (`docDefaults`, `normalStyle`, `styleChain`, `bodyRuns`, `fallback`)
@@ -25,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `WordToAstConverter` liest die neuen Werte direkt aus DOCX/PhpWord-Styles (inkl. List-Level-Definitionen und Table-Styles), ohne Heuristik.
 
 ### Changed
-- AST-Version im öffentlichen Serializer auf `1.5.0` erhöht.
+- AST-Version im öffentlichen Serializer auf `1.6.0` erhöht.
 
 ## [2.0.1] - 2026-08-24
 
