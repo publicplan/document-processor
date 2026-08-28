@@ -243,6 +243,34 @@ class AstDocumentProcessorApiTest extends TestCase
         );
     }
 
+    public function test_process_to_html_validates_list_container_without_duplicate_style_attribute(): void
+    {
+        $loader = $this->createMock(DocumentLoader::class);
+        $phpWord = new PhpWord();
+        $section = $phpWord->addSection();
+        $listItem = $section->addListItemRun(0);
+        $listItem->addText('Listenpunkt');
+        $style = $listItem->getParagraphStyle();
+        $style->setSpaceBefore(240); // ≈ 0.42cm
+        $style->setSpaceAfter(480); // ≈ 0.84cm
+        $style->setIndentLeft(720); // ≈ 1.27cm
+
+        $loader->expects($this->once())
+            ->method('loadWithDocumentMetadata')
+            ->willReturn($phpWord);
+
+        $processor = new AstDocumentProcessor($loader);
+        $result = $processor->processToHtml(
+            '/test/file.docx',
+            'test.docx',
+            new ProcessingOptions(validateHtml: true)
+        );
+
+        $this->assertTrue($result->isHtmlFragmentValid);
+        $this->assertMatchesRegularExpression('/<(ol|ul)\b[^>]*>/', $result->html);
+        $this->assertDoesNotMatchRegularExpression('/<(ol|ul)\b[^>]*\bstyle="[^"]*"[^>]*\bstyle="/', $result->html);
+    }
+
     public function test_process_to_html_renders_table_borders_from_style_name(): void
     {
         $phpWord = new PhpWord();

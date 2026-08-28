@@ -192,12 +192,7 @@ final class AstHtmlRenderer
 
         $listStartTag = $config->renderStartTag($startOverride);
         if ($listStyles !== []) {
-            $listStartTag = preg_replace(
-                '/<(ul|ol)([^>]*)>/',
-                sprintf('<$1$2 style="%s">', implode(' ', $listStyles)),
-                $listStartTag,
-                1
-            ) ?? $listStartTag;
+            $listStartTag = $this->mergeStyleAttribute($listStartTag, implode(' ', $listStyles));
         }
 
         $html = $listStartTag . PHP_EOL;
@@ -242,6 +237,28 @@ final class AstHtmlRenderer
         }
 
         return sprintf("%s%s</li>%s", $liHtml, $content, PHP_EOL);
+    }
+
+    private function mergeStyleAttribute(string $tag, string $additionalStyles): string
+    {
+        $additionalStyles = trim($additionalStyles);
+        if ($additionalStyles === '') {
+            return $tag;
+        }
+
+        if (preg_match('/\sstyle="([^"]*)"/', $tag, $matches) === 1) {
+            $existingStyles = trim($matches[1]);
+            $mergedStyles = trim($existingStyles . ' ' . $additionalStyles);
+
+            return preg_replace(
+                '/\sstyle="[^"]*"/',
+                sprintf(' style="%s"', $mergedStyles),
+                $tag,
+                1
+            ) ?? $tag;
+        }
+
+        return preg_replace('/>$/', sprintf(' style="%s">', $additionalStyles), $tag, 1) ?? $tag;
     }
 
     private function renderBorderGroup(BorderGroupNode $group): string
