@@ -174,6 +174,79 @@ In practice this means:
 2. the consuming application decides what `placeholder`, `control`, `when`, `else_if`, `else`, or `end` mean
 3. placeholder replacement, condition execution, and dialect-specific business rules stay outside this repository
 
+This separation is intentional. The library provides a stable contract for syntax annotation, while the consuming application defines its own grammar and meaning.
+
+### Example: a consuming application with a project-specific dialect
+
+A Jarvis-style profile is a good example of a downstream application that reuses the generic mechanism but introduces a custom syntax language.
+
+```php
+final class JarvisTemplateSyntaxProfile implements TemplateSyntaxProfile
+{
+    public function getName(): string
+    {
+        return 'jarvis-template';
+    }
+
+    public function detect(string $inlineSequence): array
+    {
+        $fragments = [];
+        $cursor = 0;
+        $length = strlen($inlineSequence);
+
+        while ($cursor < $length) {
+            $squarePosition = strpos($inlineSequence, '[', $cursor);
+            $anglePosition = strpos($inlineSequence, '<', $cursor);
+
+            if ($squarePosition === false && $anglePosition === false) {
+                break;
+            }
+
+            $position = min(
+                array_filter([$squarePosition, $anglePosition], static fn ($value) => $value !== false)
+            );
+
+            if ($position === null) {
+                break;
+            }
+
+            $tail = substr($inlineSequence, $position);
+            if (str_starts_with($tail, '[')) {
+                $end = strpos($tail, ']');
+                $status = $end === false ? 'malformed' : 'complete';
+                $fragments[] = new DetectedTemplateFragment(
+                    kind: 'placeholder',
+                    status: $status,
+                    startOffset: $position,
+                    endOffset: $status === 'complete' ? $position + $end + 1 : $length,
+                    raw: $status === 'complete' ? substr($tail, 0, $end + 1) : substr($tail, 0),
+                    role: 'placeholder'
+                );
+                $cursor = $position + 1;
+                continue;
+            }
+
+            if (preg_match('/^<\s*(wenn|sonst|für|\/wenn|\/für|\/ende)\b/i', $tail) === 1) {
+                $fragments[] = new DetectedTemplateFragment(
+                    kind: 'control',
+                    status: 'complete',
+                    startOffset: $position,
+                    endOffset: $position + strlen($tail),
+                    raw: $tail,
+                    role: 'when'
+                );
+            }
+
+            $cursor = $position + 1;
+        }
+
+        return $fragments;
+    }
+}
+```
+
+This example keeps the library generic while allowing a specific application to define a dialect such as `[...]` placeholders and custom German control tags.
+
 Typical app-side flow:
 
 ```php
